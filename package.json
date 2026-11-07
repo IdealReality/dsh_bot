@@ -1,0 +1,79 @@
+{
+  "name": "dsh_bot",
+  "version": "0.5.0",
+  "description": "理想的机械人：一只养在本机的陪伴角色 —— B站自主刷视频写日记、QQ 秒回（语音/表情/主动搭话）、微信替用户回消息。三平台共用同一套人格/情绪/记忆（统一时序回忆、时间常驻、占位符归一、我是谁快照、原文可检索），完全自由+自定唤醒+每日回顾让她自己过日子。所有外发默认关闭，每一项都有独立开关与额度。",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "bilibili",
+    "qq",
+    "dsh_bot",
+    "agent",
+    "diary",
+    "memory",
+    "persona",
+    "tts",
+    "snowluma",
+    "sticker",
+    "idealrainbowbridge"
+  ],
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "tools",
+    "client.js",
+    "AGENTS.template.md",
+    "cordis.patch.yml",
+    "README.md",
+    "DEPLOY.md"
+  ],
+  "scripts": {
+    "test": "node tools/run-tests.mjs",
+    "test:fast": "node test/client-smoke.mjs && node test/stickers-test.mjs && node test/memory-test.mjs",
+    "test:e2e": "node scripts/diagnose-smoke.mjs",
+    "check": "node scripts/check.mjs",
+    "check:fast": "node scripts/check.mjs --fast",
+    "verify": "node scripts/check.mjs && node tools/run-tests.mjs && node scripts/diagnose-smoke.mjs"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-renderer",
+        "@deepseek-ai/dsh-client-locale"
+      ],
+      "platform": "web"
+    }
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh": ">=0.2.1-rc.2 <0.3.0"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh": {
+      "optional": true
+    }
+  },
+  "dshBot": {
+    "contractVersion": "2026-10-31",
+    "testedAgainst": "@deepseek-ai/dsh@0.2.1-rc.2",
+    "note": "插件用的是 DSH 内部服务（webServer/connection/sessionController/permissionPresets）。升级 DSH 后请跑 node tools/bot.mjs diagnose —— 契约不满足会在那里报出来。"
+  },
+  "license": "MIT",
+  "author": "idealrainbowbridge",
+  "contributors": [
+    "idealrainbowbridge"
+  ]
+}

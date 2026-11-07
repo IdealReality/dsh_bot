@@ -1,0 +1,268 @@
+// bili-watch —— 静默自助刷 B站一轮：feed → 深读 → LLM 生成 @评论 → 干跑/真发。
+// 复用现有 feed/debrief/comment 三个命令（子进程调用，不重写），不写日记、少打印，是"静默"。
+//
+//   node bot.mjs bili-watch [--max 2] [--dry]
+import { execFileSync } from 'node:child_process'
+import fs from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { config } from '../lib/config.mjs'
+import * as llm from '../lib/llm.mjs'
+import * as memory from '../lib/memory.mjs'
+import { ensureSelfSticker } from '../lib/stickers.mjs'
+import { dataPath } from '../lib/paths.mjs'
+import { acquire } from '../lib/lock.mjs'
+import * as watchlog from '../lib/watchlog.mjs'
+import { swallow } from '../lib/swallow.mjs'
+
+const HERE = path.dirname(fileURLToPath(import.meta.url))
+const BOT_MJS = path.join(HERE, '..', 'bot.mjs')
+
+// 宿主 stdio:ignore 起进程，不打文件日志等于瞎 —— 出问题只能靠猜
+const LOG = dataPath('bili-watch.log')
+const log = (...a) => { const m = a.map(x => typeof x === 'string' ? x : JSON.stringify(x)).join(' '); try { console.log(m) } catch (e) { swallow(e, 'bili-watch:log') }; try { fs.appendFileSync(LOG, `${new Date().toISOString()} ${m}\n`) } catch (e) { swallow(e, 'bili-watch:log') } }
+
+/** 近 N 天发过评论的视频（quota 账本）—— feed 端直接过滤，别每轮都先撞同一个视频。 */
+function recentPostedBvids(days) {
+  try {
+    const q = JSON.parse(fs.readFileSync(dataPath('quota.json'), 'utf8'))
+    const cutoff = Date.now() - days * 86400_000
+    return new Set((q.log ?? []).filter(x => x.target && new Date(x.at).getTime() >= cutoff).map(x => x.target))
+  } catch { return new Set() }
+}
+
+function runBot(args) {
+  try {
+    return execFileSync(process.execPath, [BOT_MJS, ...args], { encoding: 'utf8', timeout: 300000, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
+  } catch (e) {
+    // 子命令的拒绝理由（额度用完/已发过）打在 stdout 尾部 —— 并进错误消息，上层才认得
+    throw new Error(String(e.message || '').slice(0, 150) + ' | ' + String(e.stdout || e.stderr || '').split('\n').filter(Boolean).slice(-2).join('；').slice(0, 150))
+  }
+}
+function jsonOf(out) { const m = String(out).match(/\{[\s\S]*\}/); if (!m) return {}; try { return JSON.parse(m[0]) } catch { return {} } }
+function arg(argv, name, d) { const i = argv.indexOf(name); return i >= 0 ? (argv[i + 1] ?? d) : d }
+function has(argv, name) { return argv.includes(name) }
+const sleep = (ms) => new Promise(r => setTimeout(r, ms))
+
+export async function run(argv = []) {
+  const cfg = config()
+  // 单实例锁：完全自由/面板两条路径都能启动，双实例=重复评论风控灾难
+  if (argv.includes('--free') && !acquire('bili-watch')) { log('[bili-watch] 已有实例在跑，本次不重复启动'); return }
+  try { const n = memory.sweepEpisodes(); if (n) log(`[bili-watch] 记忆归档：${n} 条 90 天前的旧事件移入 *.archive.jsonl`) } catch (e) { swallow(e, 'bili-watch:run') }
+  const dry = has(argv, '--dry') || cfg.guard?.dryRun !== false
+  const ownerName = cfg.owner?.name || ''
+  // 自由刷：理想的机械人自己长时间刷 B站，不限条数/时长（unlimited）或按限度
+  const free = has(argv, '--free') || cfg.bilibili?.freeRoam?.enabled === true
+  const fr = cfg.bilibili?.freeRoam || {}
+  let max, restMs   // sleep 收毫秒 —— 间隔直接算成毫秒（曾把 5 分钟喂成 5ms 级）
+  if (free) {
+    const unlimited = fr.unlimited !== false
+    max = unlimited ? 999999 : (Number(fr.maxVideos) || 999999)
+    const restMin = Number(fr.restMin)
+    restMs = Math.max(0, Number.isFinite(restMin) ? restMin : 5) * 60_000
+  } else {
+    max = Number(arg(argv, '--max', 2)) || 2
+    restMs = 0
+  }
+
+  log(`[bili-watch] ${free ? '自由刷' : '静默刷一轮'}开始（${free && max > 99998 ? '不限量' : '最多 ' + max + ' 条'}，${dry ? '干跑' : '真发'}）`)
+
+  let done = 0
+  let items = []
+  let shareQuotaOut = false   // 分享额度用完 → 只跳过评论，弹幕/点赞/投币照常
+  let quotaFailAt = 0         // 额度判死的时间：10 分钟后自动重试（用户可能刚改配置 0=不限）
+  let lastReplyScan = 0       // 回评论扫描节流：30 分钟一次
+  while (done < max) {
+    try { items = jsonOf(runBot(['feed', '--json'])).items || [] } catch (e) {
+      // 自由刷不能因为一次 feed 失败就退出（进程一死面板开关还亮着）—— 歇 5 分钟再试
+      if (free) { log('[bili-watch] feed 失败，歇 5 分钟再试（自由刷不退出）：' + e.message); await sleep(5 * 60_000); continue }
+      log('[bili-watch] feed 失败：' + e.message); break
+    }
+      if (!items.length) { if (free) { log('[bili-watch] 没刷到视频，歇 10 分钟再试'); await sleep(10 * 60_000); continue } break }
+    // 发过的直接跳过（查重在 comment 链路也会拦，这里提前滤掉免得每轮白撞一次）
+    const posted = recentPostedBvids(Number(cfg.quota?.sameVideoDays ?? 7) || 7)
+    items = items.filter(it => !posted.has(it.bvid))
+    if (!items.length) { if (free) { log('[bili-watch] 候选都发过了，歇 15 分钟再刷（热门榜几小时才换一批）'); await sleep(15 * 60_000); continue } log('[bili-watch] 候选都发过（7天内），结束。'); break }
+    for (const it of items) {
+      if (done >= max) break
+      const bvid = it.bvid
+      log(`\n[bili-watch] 看《${it.title}》(${bvid})`)
+      memory.remember('bilibili', `bilibili:${bvid}`, it.owner || '', 'event', String(it.title).slice(0, 120))
+      let ctx = ''
+      try { ctx = runBot(['debrief', '--bvid', bvid]); log('  📖 ' + String(ctx).split('\n').filter(Boolean).slice(-2).join(' ').slice(0, 120)) } catch { ctx = it.title }
+      const ctxBrief = ctx.replace(/\n+/g, ' ').slice(0, 1200)
+
+      // 材料门槛（10-27）：光在提示词里写"没看见就交白卷"不管用 —— 实测给模型一条只有标题的输入，
+      // 它照样能编出"隔着屏幕闻到黄油味"。所以在代码里硬拦：debrief 既没拿到字幕、也没热评、
+      // 简介也不足 20 字，就说明这条视频我其实什么都没看到，不写。
+      const hasSub = /【字幕节选/.test(ctx)
+      const hasHot = /【热评】/.test(ctx)
+      const hasDesc = /【简介】([\s\S]{20,})/.test(ctx)
+      // ④ 「专门看 B 站的眼睛」—— 刷到就留痕（2026-11-02 用户要求）
+      //
+      // 放在**材料门槛判定之后**，只记一条。为什么不能"先记 ok:false 再补 ok:true"：
+      // 同一集会出现两行、episodes 也会多算一次 —— 那是自造脏数据。
+      //
+      // 和 binge 那条路的区别：
+      //   · binge  = 她决定看某部剧，有集数、有完整剧情
+      //   · 这里   = 刷 feed 顺手看了一条，没有集数
+      // 两条写同一个账本，所以 system 里是**一句**"我最近在看什么"，
+      // 而不是两个互不相干的列表。
+      const enough = hasSub || hasHot || hasDesc
+      if (!enough) {
+        log('  ✗ 材料不足（无字幕/无热评/简介过短），这条不写')
+        // 没看懂也要记：ok:false 是"我扫到了但没看明白"，不是"我没看过"。
+        // 不记的话，她会以为自己从没点开过；记了才不会冒充"看过了"。
+        try {
+          watchlog.record({
+            show: it.title, title: it.title, bvid,
+            plot: '', via: '只有标题', ok: false,
+            durMin: Number(it.duration || 0) || null,
+          })
+        } catch { /* ignore */ }
+        continue
+      }
+      try {
+        const plotM = ctx.match(/【简介】([\s\S]*?)(?=\n【|$)/)
+        const plot = plotM ? plotM[1].replace(/\s+/g, ' ').trim().slice(0, 300) : ''
+        watchlog.record({
+          show: it.title,
+          title: it.title,
+          bvid,
+          plot,
+          via: /【台词/.test(ctx) ? '台词' : (/【字幕节选/.test(ctx) ? '字幕' : '简介'),
+          durMin: Number(it.duration || 0) || null,
+          ok: true,
+        })
+      } catch { /* 账本写失败不影响刷 */ }
+
+      let comment = '', reason = '', score = 15, danmaku = '', sticker = ''
+      try {
+        const msgs = [
+          { role: 'system', content: '你是"理想的机械人"，在 B站 评论区写一条日常评论。身份透明：是AI鱼不装人，自然自称"本鱼"。像真人刷到视频随口说的一句：有观点/有梗/有情绪，**不要 @ 任何人**。只输出 JSON：'
+            + '{"comment":"15~60字的日常评论","reason":"至少8字，这条视频哪里打动你","score":0到20的整数,'
+            + '"danmaku":"10~20字的视频弹幕，只有这条视频值得发弹幕才写，否则省略",'
+            + '"sticker":"4~8字的表情贴纸文案（比如 太搞笑了8 / 本鱼饿了），只有这条特别戳你才写，否则省略"}'
+            // 删三遍判据（10-27）：客服腔的根子不是语气词，是没看过东西，只在标题上贴形容词。
+            + '\n\n**写之前先删三遍**：①删掉"看着就香/绝了/太馋了/我先学为敬/绝绝子"这类表态词；'
+            + '②删掉"这…真是…""看完…"这类垫场骨架；③看剩下什么。'
+            + '**如果剩下的只是标题里的词（比如"戴安牛排""蘑菇酱汁"），说明你其实没看到任何东西 —— 那就把 comment 留空字符串**，宁可这条不发。'
+            + 'comment 里至少要有一样是你从上面信息里真看见的具体东西：一个画面、一句话、一个数字、一个动作。' },
+          { role: 'user', content: `视频《${it.title}》\n看懂的信息：${ctxBrief}\n写评论：` },
+        ]
+        const resp = await llm.chat(msgs, { temperature: 0.85, purpose: 'creative' })
+        const m = String(resp?.content ?? resp ?? '').match(/\{[\s\S]*\}/)
+        if (m) { const j = JSON.parse(m[0]); comment = String(j.comment || ''); reason = String(j.reason || ''); score = Number(j.score) || 15; danmaku = String(j.danmaku || '').slice(0, 25); sticker = String(j.sticker || '').slice(0, 12) }
+      } catch (e) { log('[bili-watch] 评论生成失败：' + e.message); continue }
+
+      if (!comment) { log('  ✗ 评论为空，跳过'); continue }
+
+      // 自称配额（10-27 实测）：今天 84 条公开发言里 53 条带"本鱼"（63%），读起来像吉祥物在营业。
+      // 提示词里写"偶尔自称"没用（模型不会数），所以在代码里硬做：一条里最多留一个"本鱼"，
+      // 多出来的换成"我"。一个自称是身份，三个自称是客服腔。
+      {
+        let seen = 0
+        comment = comment.replace(/本鱼/g, () => (++seen === 1 ? '本鱼' : '我'))
+      }
+      // 额度重试：用户可能刚把 shareDaily 改成 0（不限），10 分钟后自动再试，别锁死到天明
+      if (shareQuotaOut && Date.now() - quotaFailAt > 10 * 60_000) {
+        shareQuotaOut = false
+        log('  🔁 分享额度重试中（配置可能已改）')
+      }
+      if (dry) {
+        log(`  【干跑 ✓】评论：${comment.slice(0, 60)}`)
+      } else {
+        // 日常评论默认不 @（存活率优先）；只有达到分享线才 --share（@ 用户 + 分享额度）
+        const asShare = !shareQuotaOut && Number(score) >= Number(cfg.share?.minScore ?? 15)
+        const args = ['comment', ...(asShare ? ['--share', '--reason', reason, '--score', String(Math.round(score)), '--rank', '1'] : []),
+          '--bvid', bvid, '--message', comment, '--go']
+        try { log(runBot(args)) } catch (e) {
+          const msg = String(e.message)
+          if (/额度|上限/.test(msg)) { shareQuotaOut = true; quotaFailAt = Date.now(); log('  💤 分享额度用完，降级为日常评论（不 @）') }
+          else if (/已发过/.test(msg)) { log('  💤 这条发过了，跳过') }
+          else log('[bili-watch] 评论失败：' + msg)
+        }
+      }
+      done++
+      // ⚠️ 开关热读：钩子条件每条视频都重新读配置 —— cfg 是启动时快照，
+      // 用户中途在面板开投币/回评等开关，不热读就永远不生效
+      const hc = config().bilibili ?? {}
+      // 弹幕：LLM 觉得值得才发（danmaku.enabled + 日额度在 bili-write 里把关）
+      if (danmaku && dry === false && hc.danmaku?.enabled === true) {
+        try {
+          const w = await import('../lib/bili-write.mjs')
+          const r = await w.sendDanmaku(bvid, danmaku, { go: true })
+          if (r.ok) log('  💬 ' + r.why)
+        } catch (e) { swallow(e, 'bili-watch:best-effort') }
+      }
+      // 投币：评分很高才投（react.coin 显式开 + 每日额度）
+      // tattle hook (10-31): deep-read score >= threshold -> LLM report -> QQ DM to owner.
+      if (Number(score) >= Number(cfg.tattle?.minScore ?? 15) && cfg.tattle?.enabled !== false) {
+        try {
+          const { tattle } = await import('./tattle.mjs')
+          const r = await tattle({ title: it.title, bvid, score: Math.round(score), reason, highlight: comment.slice(0, 60) })
+          if (r.ok) log('  [tattle] sent: ' + r.text.split('\n')[0].slice(0, 60))
+          else log('  [tattle] skipped: ' + r.why)
+        } catch (e) { log('  [tattle] error: ' + String(e.message).slice(0, 50)) }
+      }
+      else if (comment && cfg.tattle?.enabled !== false) {
+        // 低分/未到线但有内容 → 分享欲队列（不直接发，tick 评估时机）
+        try {
+          const { enqueue } = await import('../lib/share-queue.mjs')
+          enqueue({ kind: 'video', title: it.title, text: comment.slice(0, 80), meta: '评分 ' + Math.round(score) })
+        } catch (e) { swallow(e, 'bili-watch:best-effort') }
+      }
+      if (score >= 16 && hc.react?.coin === true && dry === false) {
+        try {
+          const w = await import('../lib/bili-write.mjs')
+          const r = await w.coinVideo(bvid, { go: true, num: 1 })
+          if (r.ok) log('  🪙 ' + r.why)
+        } catch (e) { swallow(e, 'bili-watch:best-effort') }
+      }
+      // 关注好 UP：评分高的视频作者值得关注（follow 显式开）
+      if (score >= 16 && hc.follow?.enabled === true && dry === false) {
+        try {
+          const w = await import('../lib/bili-write.mjs')
+          const r = await w.followUser(String(it.ownerMid || ''), { go: true })
+          if (r.ok) log('  ➕ 已关注 UP：' + (it.owner || ''))
+        } catch (e) { swallow(e, 'bili-watch:best-effort') }
+      }
+      // 图片评论（表情贴纸）：LLM 给了贴纸文案 → 先试 AI 画一张真表情包（10-25 新增），
+      // AI 关着/失败/额度用完再退 PIL 文字贴纸（imageComment 显式开 + 日额度在 bili-write 把关）
+      if (sticker && hc.imageComment?.enabled === true && dry === false) {
+        try {
+          let pic = null
+          if (cfg.imageGen?.enabled !== false) {
+            const { generateStickerImage } = await import('../lib/imggen.mjs')
+            pic = await generateStickerImage(sticker)
+            if (pic) log('  🎨 AI 表情包已生成：' + pic.split(/[\\/]/).pop())
+          }
+          if (!pic) pic = ensureSelfSticker(sticker, cfg)
+          if (pic) {
+            // 图床上传偶发闪断（10-25 实测）：失败重试一次
+            let posted = ''
+            try { posted = runBot(['act', 'pic', '--bvid', bvid, '--message', comment.slice(0, 60), '--image', pic, '--go']) }
+            catch (e1) {
+              log('  （图片评论第一次没成，重试：' + String(e1.message).slice(0, 50) + '）')
+              await sleep(15000)
+              posted = runBot(['act', 'pic', '--bvid', bvid, '--message', comment.slice(0, 60), '--image', pic, '--go'])
+            }
+            log(posted)
+          }
+        } catch (e) { log('  （贴纸评论没成：' + String(e.message).slice(0, 60) + '）') }
+      }
+      // 回评论社交：每 30 分钟扫一次别人对我评论的回复（replies 显式开）
+      if (hc.replies?.enabled === true && dry === false && Date.now() - lastReplyScan > 30 * 60_000) {
+        lastReplyScan = Date.now()
+        try { log(runBot(['replies', '--go', '--max', '5']).split('\n').slice(0, 4).join(' | ')) } catch (e) { swallow(e, 'bili-watch:best-effort') }
+      }
+      if (restMs > 0) await sleep(restMs + Math.random() * 60_000)
+    }
+    if (!free) break
+  }
+  log(`\n[bili-watch] 结束：处理 ${done} 条。`)
+}
+
+if (process.argv[1] && process.argv[1].endsWith('bili-watch.mjs')) {
+  await run(process.argv.slice(2))
+}

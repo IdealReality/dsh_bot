@@ -1,0 +1,87 @@
+#!/usr/bin/env node
+// bot —— 理想的机械人· 工具链总入口。
+// 结构仿 dsh-bili-whale 的 tools/bili.mjs：命令分发到 tools/commands/*.mjs。
+//
+//   node bot.mjs <命令> [参数]
+// 常用：
+//   node bot.mjs selftest          # 装完立刻跑
+//   node bot.mjs nav               # 我是谁 / 登录验证
+//   node bot.mjs feed [--json]     # 选题 ≤5 条
+//   node bot.mjs debrief --bvid BV1xx   # 看懂一条
+//   node bot.mjs comment --share --bvid BV1xx --message "…" --reason "…" --score 15 --rank 1   # 干跑；--go 真发
+//   node bot.mjs quota show        # 今天额度
+//   node bot.mjs diary --book owner --append "…"   # 写日记
+//   node bot.mjs mem stats         # 记忆库
+import path from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+
+const HERE = path.dirname(fileURLToPath(import.meta.url))
+
+const COMMANDS = {
+  selftest: '启动体检（装完立刻跑）',
+  diagnose: '静默失效体检：配置漂移/假开关/权限/记账缺口/吞错日志/入口鉴权/死链路 一次摊开（--json 给程序读）',
+  paincheck: '全链自检并注入痛感：契约/网关/收发/LLM/owner/数据/人设/心跳，问题直接登记伤口+应激（--quiet 给心跳定时调用）',
+  'config-upgrade': '配置对齐：把实际配置补齐到 DEFAULTS 的形状，历史残留搬进 __legacy（默认干跑，--go 才写）',
+  sleep: '睡眠：积累够了才睡（睡意>=66）。sleep check 看睡意 | sleep 直接睡 | sleep --force 强制。睡=整理记忆+三审（代码/脑/账本）+git归档，睡完自动醒',
+  dream: '梦境：睡觉时做的梦（纯虚构，与真实记忆隔离）。dream list 看梦 | dream 直接做一个',
+  nightwork: '睡眠维护的单个工序（独立进程）：nightwork tidy|review|optimize [--stamp ISO]。由 sleep 派活，也能单独重跑',
+  status: 'QQ在线状态：status dnd（勿扰）/online（在线）/away/busy/invisible ｜ status show 看当前。睡着勿扰/醒后在线，平时身体自己调（累了忙碌/欠觉离开/亢奋Q我吧），也能手动换',
+  'bili-me': '她的账号台：bili-me 看自己是谁（B站mid/等级/签名/QQ两号）| bili-me sign 看签名 | bili-me sign --set 文字 改签名（B站号的签名，归她管）',
+  'bili-submit': 'B站自动投稿：bili-submit video.mp4 --title 标题 --tid 21 --tags a,b --desc 简介 [--cover 封面] [--dry]。preupload→分片→合并→提交全自动',
+  'bili-del': '删除她自己的B站投稿：bili-del BV号 [--go]（默认干跑）。她自己清理测试稿/不满意的作品用',
+  wander: '自主探索：wander check 看念头原材料 ｜ wander 直接做一个（LLM自主产生念头+执行）',
+  tattle: '打小报告：tattle --title 标题 --bvid BV号 --score 分 --reason 理由——看完好视频后 QQ 私信汇报给笨蛋管理员（每天最多3条，config.tattle.dailyMax 可调）',
+  nav: '登录验证 / 我是谁',
+  feed: '选题：热门+搜索，偏好加权',
+  debrief: '看懂一条视频（元信息+字幕+热评+简介）',
+  comment: '发评论（--share = 分享 @ 用户）',
+  quota: '额度账本（check/record/show）',
+  ledger: '账本：今天吃了多少饭钱/还能吃多少/今天还能干几件事（她自己查，不用问用户）',
+  avatar: '看头像：avatar 看自己的、avatar --owner 看管理员的（真看图，不是背设定）｜--refresh 重下',
+  selfsrc: '看自己的代码（只读）：selfsrc tree 结构 ｜ selfsrc grep <词> 搜 ｜ selfsrc read <文件> --from N --lines N 读一段',
+  'selfcon-seed': '一次性（幂等）：把现在的 identity/persona/腔调种进 selfcon.json 当账本起点（不发明新内容）',
+  sanitize: '脱敏器自检：sanitize test 验证拦截规则（该拦的拦、日常话不误伤）｜sanitize hits 看最近命中',
+  selfmod: '改自己（全自主）：selfmod propose <文件> <为什么> --from <新内容文件> 提案 → selfmod selfApply 免审批落地（备份+语法+门禁+失败自动还原）｜selfmod snapshot 拍快照｜selfmod status',
+  diary: '两本日记（--book owner|private）',
+  mem: '三层记忆（remember/fact/lore/recall/old/stats）',
+  'qq-server': 'QQ 常驻聊天服务（OneBot v11 网关：SnowLuma/SnowLuma 均可，实时秒回）',
+  qzone: '发 QQ 空间说说（OneBot send_qzone_msg）',
+  report: '观看日报（B站/抖音 聚合 Markdown，不调模型）',
+  review: '复盘学习日记（B站/抖音 提炼，写进私人日记）',
+  'bili-watch': 'B站静默自助刷一轮（feed→深读→@评论）',
+  act: 'B站活人感动作：act danmaku|dyn|like|coin|pic|follow（默认干跑）',
+  replies: 'B站社交：⓪回自己作品下面的评论（任何类型：文字/表情/图片）①回别人对我的回复 ②主动搭话（默认干跑）',
+  voice: '音色工坊：list/try/tryall/use/import + refcheck（ASR 核对参考文本，漏字会漏配音）+ refclean（挤掉参考段死空气，死空气会把音色带偏）| models（她的RVC音色）| train [--name] [--epochs]（训她自己的声音）| use-model --name',
+  sing: '唱一首：["主题"] 原创（说唱/旋律）| cover "歌名" [--url 链接|--file 本地] 专业翻唱（换她的声音混伴奏）| songs 歌单',
+  sticker: '表情包工坊：sticker gen "文案" [--tag 标签] [--send]（AI 画图入库，免费无 key）',
+  web: '上网工具：web search "关键词" | web fetch <url> | web log（她的全网冲浪手脚）',  web: '上网工具：web search "关键词" | web fetch <url> | web log（她的全网冲浪手脚）',
+  browser: '内置浏览器：browser read <url> [--pc|--mobile] [--links] | text/links | click/type/enter | scroll/back | shot | status | close（JS 页面也能读，电脑/手机双身份）',
+  selfup: '自我升级底座：selfup backup（改前备份）| selfup log "改了什么" | selfup status',
+  produce: '视频生产（真剪辑的片子）：produce ["主题"] [--frames 1|2]（她策划→生图→配音→运镜→转场→烧字幕→配乐→1080p成片+封面；B站首条锁死自我介绍）| --debut 看首条锁 | --debut-posted BV号 解锁',
+  social: 'B站社交流水：social [--days 3] [--kind 回评] [--invisible] [--md] [--push]（她今天跟谁说了什么，重点是不 @ 用户的那些）',
+  vision: '视觉理解：status（看配置）| probe --image <图>（多模态描述，等视觉 key 点亮）',
+  selfwake: '她自己定下次几点醒：selfwake 23:40 [--note "…"]｜--show｜--clear',
+  selfcon: '自我账本：selfcon show 看她认下的自己 ｜ selfcon introspect 照一次镜子（白天只采集，结算归睡眠）',
+  mind: '统一自主规划：mind（看当前计划）| mind now（立刻重新决定接下来做什么）| mind history（决策流水）',
+  focus: '她决定"接下来这一段时间干什么"：focus web|bilibili|binge --min 25 ｜focus rest --min 40 ｜focus off ｜focus（看现在在干什么）',
+  binge: '看番/看剧（真的看完一集）：binge --search "番名" | binge --show "番名" --ep 2 --go | binge --bvid BV1xx --go | binge --list',
+  research: '专题研究（真的往下想）：research start --topic "题目" [--depth 3 --videos 14] → 后台按六轴找视频、递归深挖、跑完主动汇报 | status [--id] | list | report --id [--push] | stop --id | watchdog',
+  promises: '承诺账本：promises（列）| promises done <id> | promises fail <id> "为什么" | promises --due（到点的）',
+  roster: '人物名册：roster 看最近见过的人 ｜ roster --who <号> --call 称呼 ｜ roster --who <号> --note "印象"',
+  brain: '脑（v3）：brain doctor（8 条不变量体检）| brain stats | brain recall "线索" | brain consolidate [--llm] [--dry] | brain intents | brain facts | brain migrate [owner|lore|all] | brain eval [--calibrate] | brain self | brain emit "…" | brain tick',
+}
+
+const cmd = process.argv[2]
+if (!cmd || !(cmd in COMMANDS)) {
+  console.log('理想的机械人· v' + (JSON.parse(await import('node:fs').then(m => m.readFileSync(path.join(HERE, '..', 'package.json'), 'utf8')))).version)
+  console.log('')
+  console.log('用法：node bot.mjs <命令> [参数]')
+  for (const [name, desc] of Object.entries(COMMANDS)) console.log(`  ${name.padEnd(10)} ${desc}`)
+  process.exit(cmd ? 1 : 0)
+}
+
+// Windows 绝对路径不能直接进动态 import —— 必须 file:// URL（node:internal/modules/esm/load 会拒 d: 协议）
+const mod = await import(pathToFileURL(path.join(HERE, 'commands', `${cmd}.mjs`)).href)
+const run = mod.run ?? mod.default
+if (typeof run !== 'function') { console.error(`命令 ${cmd} 没有 run 导出`); process.exit(1) }
+await run(process.argv.slice(3))

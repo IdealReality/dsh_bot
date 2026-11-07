@@ -1,0 +1,1227 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>机械人 · 设置</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #080b11;
+    --sheet: #0d131c;
+    --inset: #0a0f16;
+    --line: #1c2634;
+    --line-soft: #151d27;
+    --fg: #e8eef6;
+    --fg-2: #a9b7c7;
+    --fg-3: #8494a6;
+    --accent: #4d9fff;
+    --accent-hover: #66aeff;
+    --accent-ink: #04121f;
+    --ok: #3ddc97;
+    --warn: #f3b13a;
+    --bad: #ff8f85;
+    --r: 10px;
+    --sans: -apple-system, "Segoe UI Variable Text", "Segoe UI", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0; font: 13px/1.6 var(--sans); color: var(--fg);
+    background:
+      radial-gradient(1100px 460px at 44% -220px, rgba(77,159,255,.13), transparent 72%),
+      radial-gradient(700px 320px at 92% 4%, rgba(61,220,151,.045), transparent 70%),
+      var(--bg);
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection { background: rgba(77,159,255,.32); color: #fff; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  a { color: inherit; }
+  code { font-family: var(--mono); font-size: 11.5px; }
+
+  /* ── 骨架 ─────────────────────────────────────────────────────────── */
+  .shell {
+    display: grid; grid-template-columns: 236px minmax(0, 1fr);
+    max-width: 1180px; margin: 0 auto; min-height: 100vh;
+  }
+  .rail {
+    position: sticky; top: 0; align-self: start; height: 100vh;
+    display: flex; flex-direction: column; gap: 22px;
+    padding: 28px 18px 22px;
+    border-right: 1px solid var(--line-soft);
+  }
+  .brand { display: flex; align-items: center; gap: 11px; padding: 0 8px; }
+  .brand-mark {
+    width: 34px; height: 34px; flex: none; border-radius: 11px;
+    display: grid; place-items: center; color: var(--accent);
+    background: linear-gradient(160deg, rgba(77,159,255,.16), rgba(77,159,255,.04));
+    border: 1px solid rgba(77,159,255,.28);
+    box-shadow: 0 6px 18px -10px rgba(77,159,255,.7);
+  }
+  .brand-mark svg { width: 20px; height: 20px; }
+  .brand-name { font-size: 14px; font-weight: 600; letter-spacing: .01em; line-height: 1.25; }
+  .brand-sub { font-family: var(--mono); font-size: 10px; letter-spacing: .16em; color: var(--fg-3); margin-top: 2px; }
+
+  .nav { display: flex; flex-direction: column; gap: 2px; }
+  .nav a {
+    display: flex; align-items: center; gap: 9px;
+    padding: 7px 10px; border-radius: 8px;
+    font-size: 12.5px; color: var(--fg-2); text-decoration: none;
+    transition: background .16s ease, color .16s ease, box-shadow .16s ease;
+  }
+  .nav a svg { width: 15px; height: 15px; flex: none; opacity: .8; }
+  .nav a:hover { background: rgba(255,255,255,.035); color: var(--fg); }
+  .nav a[aria-current="true"] {
+    color: var(--fg); background: rgba(77,159,255,.10);
+    box-shadow: inset 0 0 0 1px rgba(77,159,255,.22);
+  }
+  .nav a[aria-current="true"] svg { opacity: 1; color: var(--accent); }
+
+  .rail-foot {
+    margin-top: auto; display: flex; flex-direction: column; gap: 8px;
+    padding: 12px 10px 0; border-top: 1px solid var(--line-soft);
+    font-size: 11.5px; color: var(--fg-3);
+  }
+  .rail-foot code { color: var(--fg-3); word-break: break-all; line-height: 1.5; }
+  .sync { display: flex; align-items: center; gap: 7px; }
+  .sync i {
+    width: 6px; height: 6px; border-radius: 50%; flex: none;
+    background: var(--ok); box-shadow: 0 0 0 3px rgba(61,220,151,.12);
+  }
+  .sync.busy i { background: var(--warn); box-shadow: 0 0 0 3px rgba(243,177,58,.14); }
+  .sync.err i { background: var(--bad); box-shadow: 0 0 0 3px rgba(255,143,133,.14); }
+
+  main { padding: 40px 44px 120px; min-width: 0; }
+  .col { max-width: 660px; }
+
+  /* ── 抬头 ─────────────────────────────────────────────────────────── */
+  .head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; margin-bottom: 34px; }
+  h1 { margin: 0; font-size: 23px; font-weight: 600; letter-spacing: -.015em; line-height: 1.2; text-wrap: balance; }
+  .lede { margin: 8px 0 0; font-size: 12.5px; color: var(--fg-2); max-width: 58ch; }
+  .head-actions { display: flex; gap: 8px; flex: none; padding-top: 2px; }
+
+  /* ── 分区 ─────────────────────────────────────────────────────────── */
+  .block { padding: 26px 0 30px; border-top: 1px solid var(--line-soft); scroll-margin-top: 18px; }
+  .block:first-of-type { border-top: 0; padding-top: 0; }
+  .block-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-bottom: 6px; }
+  h2 { margin: 0; font-size: 13.5px; font-weight: 600; letter-spacing: .01em; }
+  .block-note {
+    margin: 0; min-width: 0; font-size: 11.5px; color: var(--fg-3);
+    font-variant-numeric: tabular-nums; text-align: right;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+
+  /* ── 读数 ─────────────────────────────────────────────────────────── */
+  .readouts {
+    display: flex; flex-wrap: wrap; gap: 1px;
+    background: var(--line-soft);
+    border: 1px solid var(--line); border-radius: 12px; overflow: hidden;
+    margin-top: 16px;
+  }
+  .readout {
+    flex: 1 1 152px; min-width: 0;
+    background: var(--sheet); padding: 11px 13px 12px;
+    /* 线画在格子上、容器留 1px 底色，末行不满时缺口也是同色，不会露出空洞 */
+    box-shadow: -1px -1px 0 var(--line-soft);
+  }
+  .readout-k { font-size: 11px; color: var(--fg-3); letter-spacing: .03em; }
+  .readout-v {
+    display: flex; align-items: center; gap: 7px;
+    margin-top: 3px; font-size: 12.5px; color: var(--fg);
+    font-variant-numeric: tabular-nums;
+  }
+  .readout-v span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dot { width: 6px; height: 6px; border-radius: 50%; flex: none; background: var(--fg-3); }
+  .dot.ok { background: var(--ok); box-shadow: 0 0 0 3px rgba(61,220,151,.1); }
+  .dot.warn { background: var(--warn); box-shadow: 0 0 0 3px rgba(243,177,58,.1); }
+  .dot.bad { background: var(--bad); box-shadow: 0 0 0 3px rgba(255,143,133,.1); }
+
+  /* ── 表单 ─────────────────────────────────────────────────────────── */
+  .field {
+    display: grid; grid-template-columns: 132px minmax(0, 1fr);
+    gap: 6px 20px; align-items: start; padding: 11px 0;
+  }
+  .field > label, .field > .flabel {
+    padding-top: 7px; font-size: 12.5px; color: var(--fg-2); line-height: 1.5;
+  }
+  .field > label[for] { cursor: pointer; }
+  .control { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .inline { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+  input[type=text], input[type=number], select, textarea {
+    appearance: none; -webkit-appearance: none;
+    background: var(--inset); color: var(--fg);
+    border: 1px solid var(--line); border-radius: 9px;
+    padding: 7px 10px; font: inherit; font-size: 12.5px;
+    min-width: 0; outline: none; caret-color: var(--accent);
+    transition: border-color .15s ease, box-shadow .15s ease, background .15s ease;
+  }
+  input[type=text]:hover, input[type=number]:hover, select:hover, textarea:hover { border-color: #26313f; }
+  input[type=text]:focus, input[type=number]:focus, select:focus, textarea:focus {
+    border-color: var(--accent); box-shadow: 0 0 0 3px rgba(77,159,255,.16); background: #0b121b;
+  }
+  input[type=text], input[type=number] { width: 100%; max-width: 300px; }
+  input[type=number] { max-width: 118px; font-variant-numeric: tabular-nums; }
+  input[type=number]::-webkit-outer-spin-button,
+  input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  input[type=number] { -moz-appearance: textfield; }
+  input::placeholder, textarea::placeholder { color: #7b8b9e; }
+  input[aria-invalid="true"] { border-color: var(--bad); box-shadow: 0 0 0 3px rgba(255,143,133,.14); }
+  select {
+    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238494a6' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 10px center;
+    padding-right: 30px; max-width: 100%; width: 100%;
+  }
+  select option { background: #0d131c; color: var(--fg); }
+  textarea { width: 100%; min-height: 232px; max-height: 62vh; resize: none; padding: 12px 13px; line-height: 1.75; overflow: auto; }
+
+  .num { position: relative; display: inline-flex; align-items: center; }
+  .num input { padding-right: 34px; }
+  .num .unit {
+    position: absolute; right: 10px; font-size: 11.5px; color: var(--fg-3);
+    pointer-events: none; font-variant-numeric: tabular-nums;
+  }
+  .time { max-width: 96px !important; font-variant-numeric: tabular-nums; letter-spacing: .04em; text-align: center; }
+  .arrow { color: var(--fg-3); font-size: 12px; }
+
+  /* 平台行 */
+  .plats { margin-top: 10px; border-top: 1px solid var(--line-soft); }
+  .plat {
+    display: flex; align-items: center; justify-content: space-between; gap: 18px;
+    padding: 11px 4px; border-bottom: 1px solid var(--line-soft);
+    transition: background .16s ease;
+  }
+  .plat:hover { background: rgba(255,255,255,.017); }
+  .plat-name { font-size: 12.5px; font-weight: 500; }
+  .plat-desc { font-size: 11.5px; color: var(--fg-3); margin-top: 1px; line-height: 1.45; }
+
+  .switch {
+    position: relative; flex: none; width: 42px; height: 24px; padding: 0;
+    border-radius: 999px; cursor: pointer;
+    background: #101823; border: 1px solid #26313f;
+    transition: background .18s ease, border-color .18s ease, opacity .18s ease;
+  }
+  .switch::after {
+    content: ""; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px;
+    border-radius: 50%; background: #7f8fa1;
+    transition: left .2s cubic-bezier(.2,.8,.2,1), background .18s ease;
+  }
+  .switch[aria-checked="true"] { background: var(--accent); border-color: transparent; }
+  .switch[aria-checked="true"]::after { left: 20px; background: #fff; }
+  .switch:hover:not(:disabled) { border-color: #37465a; }
+  .switch:disabled { opacity: .5; cursor: default; }
+
+  /* 按钮 */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+    border-radius: 9px; padding: 7px 14px; font: inherit; font-size: 12.5px;
+    cursor: pointer; white-space: nowrap;
+    border: 1px solid #2a3644; background: transparent; color: var(--fg-2);
+    transition: background .15s ease, border-color .15s ease, color .15s ease, opacity .15s ease;
+  }
+  .btn svg { width: 14px; height: 14px; }
+  .btn:hover:not(:disabled) { background: rgba(255,255,255,.04); color: var(--fg); border-color: #3a4a5d; }
+  .btn:disabled { opacity: .5; cursor: default; }
+  .btn.primary {
+    background: var(--accent); border-color: transparent; color: var(--accent-ink);
+    font-weight: 600;
+  }
+  .btn.primary:hover:not(:disabled) { background: var(--accent-hover); border-color: transparent; color: var(--accent-ink); }
+
+  .help { margin: 0; font-size: 11.5px; line-height: 1.55; color: var(--fg-3); }
+  .help.cjk { color: var(--fg-3); }
+  .count { font-variant-numeric: tabular-nums; }
+  .flags { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .flag {
+    font-size: 11px; padding: 1px 7px; border-radius: 999px;
+    border: 1px solid rgba(243,177,58,.32); color: var(--warn); background: rgba(243,177,58,.08);
+    font-variant-numeric: tabular-nums;
+  }
+  .flag[hidden] { display: none; }
+
+  /* 音量滑杆 */
+  .range-wrap { display: flex; align-items: center; gap: 14px; max-width: 320px; width: 100%; }
+  input[type=range] {
+    appearance: none; -webkit-appearance: none; flex: 1; height: 22px; background: transparent;
+    --fill: 15%;
+  }
+  input[type=range]::-webkit-slider-runnable-track {
+    height: 4px; border-radius: 4px;
+    background: linear-gradient(90deg, var(--accent) var(--fill), #1e2836 var(--fill));
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 15px; height: 15px; margin-top: -5.5px;
+    border-radius: 50%; background: #fff; border: 0;
+    box-shadow: 0 1px 4px rgba(0,0,0,.55);
+    transition: transform .12s ease;
+  }
+  input[type=range]:hover::-webkit-slider-thumb { transform: scale(1.08); }
+  input[type=range]::-moz-range-track { height: 4px; border-radius: 4px; background: #1e2836; }
+  input[type=range]::-moz-range-progress { height: 4px; border-radius: 4px; background: var(--accent); }
+  input[type=range]::-moz-range-thumb { width: 15px; height: 15px; border: 0; border-radius: 50%; background: #fff; }
+  .range-val {
+    min-width: 44px; text-align: right; font-family: var(--mono); font-size: 12px;
+    color: var(--fg); font-variant-numeric: tabular-nums;
+  }
+  input[type=range]:disabled { opacity: .4; cursor: default; }
+  input[type=range]:disabled::-webkit-slider-thumb { transform: none; }
+
+  /* 记忆 */
+  .mem-stats { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+  .chip {
+    font-size: 11.5px; padding: 2px 9px; border-radius: 999px;
+    background: rgba(255,255,255,.04); border: 1px solid var(--line);
+    color: var(--fg-2); font-variant-numeric: tabular-nums;
+  }
+  .chip b { color: var(--fg); font-weight: 600; }
+  .mem {
+    margin-top: 12px; max-height: 320px; overflow: auto;
+    border-top: 1px solid var(--line-soft);
+    scrollbar-width: thin; scrollbar-color: #26313f transparent;
+  }
+  .mem::-webkit-scrollbar { width: 10px; }
+  .mem::-webkit-scrollbar-thumb { background: #202b39; border-radius: 10px; border: 3px solid transparent; background-clip: padding-box; }
+  .mem::-webkit-scrollbar-thumb:hover { background: #2b394b; background-clip: padding-box; }
+  .mem-row { display: flex; gap: 10px; padding: 9px 2px; border-bottom: 1px solid var(--line-soft); }
+  .mem-who { flex: none; width: 30px; font-size: 11.5px; color: var(--fg-2); padding-top: 1px; }
+  .mem-body { min-width: 0; font-size: 12px; line-height: 1.65; color: var(--fg-2); }
+  .mem-tag {
+    font-size: 10.5px; font-family: var(--mono); padding: 0 5px; border-radius: 4px;
+    background: rgba(77,159,255,.10); color: #8fc2ff; margin-right: 6px;
+    vertical-align: 1px; letter-spacing: .01em;
+  }
+  .mem-empty { padding: 18px 2px; font-size: 12px; color: var(--fg-3); line-height: 1.6; }
+
+  /* 载入骨架 */
+  .sk { position: relative; overflow: hidden; background: #0e151e; border-radius: 7px; }
+  .sk::after {
+    content: ""; position: absolute; inset: 0;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,.045), transparent);
+    animation: sweep 1.5s ease-in-out infinite;
+  }
+  @keyframes sweep { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+  .sk-line { height: 11px; margin: 9px 0; }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+  }
+
+  /* 提示条 */
+  .toast {
+    position: fixed; left: 50%; bottom: 28px; z-index: 20;
+    transform: translate(-50%, 12px); opacity: 0; pointer-events: none;
+    display: flex; align-items: center; gap: 9px;
+    padding: 9px 16px; border-radius: 10px; font-size: 12.5px;
+    background: #101a26; border: 1px solid #21303f; color: var(--fg);
+    box-shadow: 0 16px 40px -18px rgba(0,0,0,.9);
+    transition: opacity .18s ease, transform .22s cubic-bezier(.2,.8,.2,1);
+    max-width: min(560px, calc(100vw - 40px));
+  }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+  .toast i { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); flex: none; }
+  .toast.err i { background: var(--bad); }
+
+  .fatal { border: 1px solid rgba(255,143,133,.3); background: rgba(255,143,133,.06); border-radius: 12px; padding: 16px 18px; }
+  .fatal h3 { margin: 0 0 6px; font-size: 13px; color: var(--fg); }
+  .fatal p { margin: 0 0 12px; font-size: 12px; color: var(--fg-2); line-height: 1.6; }
+
+  /* ── 窄屏 ─────────────────────────────────────────────────────────── */
+  @media (max-width: 900px) {
+    .shell { grid-template-columns: minmax(0, 1fr); }
+    .rail {
+      position: sticky; top: 0; z-index: 10; height: auto;
+      flex-direction: row; align-items: center; gap: 14px;
+      padding: 10px 16px; overflow-x: auto;
+      background: rgba(8,11,17,.92); backdrop-filter: blur(10px);
+      border-right: 0; border-bottom: 1px solid var(--line-soft);
+    }
+    .brand { flex: none; }
+    .brand-text { display: none; }
+    .nav {
+      flex-direction: row; gap: 2px; overflow-x: auto; scrollbar-width: none;
+      /* 右边渐隐：告诉用户还能往右滑，而不是看起来被裁断 */
+      mask-image: linear-gradient(90deg, #000 calc(100% - 26px), transparent);
+      -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 26px), transparent);
+      padding-right: 26px;
+    }
+    .nav::-webkit-scrollbar { display: none; }
+    .nav a { white-space: nowrap; padding: 6px 9px; font-size: 12px; }
+    .nav a svg { display: none; }
+    .rail-foot { display: none; }
+    main { padding: 26px 20px 96px; }
+    .block { scroll-margin-top: 68px; }
+    h1 { font-size: 21px; }
+    .field { grid-template-columns: minmax(0, 1fr); gap: 6px; padding: 10px 0; }
+    .field > label, .field > .flabel { padding-top: 0; }
+  }
+
+  /* ── 身体/神经/自检（2026-11-05）────────────────────────────────── */
+  .organs { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; }
+  .organ { background: var(--inset); border: 1px solid var(--line-soft); border-radius: var(--r); padding: 12px 14px; }
+  .organ-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+  .organ-name { font-weight: 600; font-size: 12.5px; }
+  .organ-val { font-family: var(--mono); font-size: 12px; color: var(--fg-2); }
+  .bar { height: 6px; background: rgba(255,255,255,.06); border-radius: 3px; overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 0; background: var(--accent); border-radius: 3px; transition: width .5s ease; }
+  .bar.bad i { background: var(--bad); }
+  .bar.warn i { background: var(--warn); }
+  .organ-hint { margin: 7px 0 0; font-size: 11px; color: var(--fg-3); }
+  .neuro-rows { display: flex; flex-direction: column; gap: 9px; }
+  .neuro-row { display: grid; grid-template-columns: 76px 1fr 52px; align-items: center; gap: 10px; }
+  .neuro-k { font-size: 12px; color: var(--fg-2); }
+  .neuro-v { font-family: var(--mono); font-size: 11.5px; color: var(--fg-3); text-align: right; }
+  .alarm { margin-top: 12px; padding: 10px 14px; border-radius: var(--r); background: rgba(255,143,133,.08); border: 1px solid rgba(255,143,133,.3); color: var(--bad); font-size: 12.5px; }
+  .paincheck-items { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
+  .pc-item { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: var(--inset); border: 1px solid var(--line-soft); border-radius: 8px; font-size: 12px; }
+  .pc-item .pc-mark { font-weight: 700; width: 16px; text-align: center; }
+  .pc-item.ok .pc-mark { color: var(--ok); }
+  .pc-item.bad .pc-mark { color: var(--bad); }
+  .pc-item .pc-id { font-family: var(--mono); width: 90px; flex: none; }
+  .pc-item .pc-detail { color: var(--fg-2); flex: 1; }
+  .pc-item .pc-hurt { color: var(--warn); font-family: var(--mono); font-size: 11px; }
+
+  /* ── 日记（2026-11-05）──────────────────────────────────────────── */
+  .btn.seg { opacity: .55; }
+  .btn.seg[aria-pressed="true"] { opacity: 1; box-shadow: inset 0 0 0 1px rgba(77,159,255,.4); color: var(--fg); }
+  .diary-body {
+    background: var(--inset); border: 1px solid var(--line-soft); border-radius: var(--r);
+    padding: 16px 20px; white-space: pre-wrap; line-height: 1.85; font-size: 13px;
+    max-height: 62vh; overflow-y: auto; color: var(--fg);
+  }
+</style>
+</head>
+<body>
+<div class="shell">
+  <aside class="rail">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">
+        <!-- Lucide fish -->
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M6.5 12c.94-3.46 4.94-6 8.5-6 3.56 0 6.06 2.54 7 6-.94 3.47-3.44 6-7 6s-7.56-2.53-8.5-6Z"/>
+          <path d="M18 12v.5"/>
+          <path d="M16 17.93a9.77 9.77 0 0 1 0-11.86"/>
+          <path d="M7 10.67C7 8 5.58 5.97 2.73 5.5c-1 1.5-1 5 .23 6.5-1.24 1.5-1.24 5-.23 6.5C5.58 18.03 7 16 7 13.33"/>
+          <path d="M9.5 12h.01"/>
+        </svg>
+      </div>
+      <div class="brand-text">
+        <div class="brand-name">机械人</div>
+        <div class="brand-sub">SETTINGS</div>
+      </div>
+    </div>
+
+    <nav class="nav" aria-label="设置分区">
+      <a href="#overview" data-nav="overview">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></svg>
+        概览
+      </a>
+
+      <a href="#body" data-nav="body"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8z"/></svg>
+        身体</a>
+      <a href="#neuro" data-nav="neuro"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a7 7 0 0 1 7 7c0 2.4-1.2 4.5-3 5.7V17a2 2 0 0 1-2 2h-4a2 2 0 0 1-2-2v-2.3C6.2 13.5 5 11.4 5 9a7 7 0 0 1 7-7z"/><path d="M10 22h4"/></svg>
+        神经</a>
+      <a href="#paincheck" data-nav="paincheck"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>
+        自检</a>
+      <a href="#platforms" data-nav="platforms">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/></svg>
+        平台
+      </a>
+      <a href="#owner" data-nav="owner">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        用户
+      </a>
+      <a href="#voice" data-nav="voice">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19v3"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><rect x="9" y="2" width="6" height="13" rx="3"/></svg>
+        音色
+      </a>
+      <a href="#rhythm" data-nav="rhythm">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+        作息与限额
+      </a>
+      <a href="#persona" data-nav="persona">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M8 13h8"/><path d="M8 17h5"/></svg>
+        角色设定
+      </a>
+      <a href="#diary" data-nav="diary">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5V19A9 3 0 0 0 21 19V5"/><path d="M3 12A9 3 0 0 0 21 12"/></svg>
+        日记库
+      </a>
+      <a href="#memory" data-nav="memory">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5V19A9 3 0 0 0 21 19V5"/><path d="M3 12A9 3 0 0 0 21 12"/></svg>
+        记忆库
+      </a>
+    </nav>
+
+    <div class="rail-foot">
+      <div class="sync" id="sync"><i></i><span id="syncText">即时保存已就绪</span></div>
+      <code id="cfgpath">bot.config.json</code>
+    </div>
+  </aside>
+
+  <main>
+    <div class="col">
+      <header class="head">
+        <div>
+          <h1>设置</h1>
+          <p class="lede">改动即时写入配置文件，下一次唤醒或重启 DSH 生效。</p>
+        </div>
+        <div class="head-actions">
+          <button class="btn" id="reload" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+            重新读取
+          </button>
+        </div>
+      </header>
+
+      <div id="fatal" hidden></div>
+
+      <!-- 概览 -->
+      <section class="block" id="overview">
+        <div class="block-head">
+          <h2>概览</h2>
+          <p class="block-note" id="overviewNote">—</p>
+        </div>
+        <div class="readouts" id="readouts">
+          <div class="readout"><div class="readout-k">调度器</div><div class="readout-v"><span class="dot"></span><span>读取中</span></div></div>
+          <div class="readout"><div class="readout-k">QQ 网关</div><div class="readout-v"><span class="dot"></span><span>读取中</span></div></div>
+          <div class="readout"><div class="readout-k">微信</div><div class="readout-v"><span class="dot"></span><span>读取中</span></div></div>
+          <div class="readout"><div class="readout-k">执行权限</div><div class="readout-v"><span class="dot"></span><span>读取中</span></div></div>
+        </div>
+      </section>
+
+      <!-- 身体 -->
+      <section class="block" id="body">
+        <div class="block-head">
+          <h2>身体</h2>
+          <p class="block-note">器官实况——每个读数都是正在运行的代码</p>
+        </div>
+        <div class="organs" id="organs">
+          <div class="organ">
+            <div class="organ-head"><span class="organ-name">⚡ 能量</span><span class="organ-val" id="og_energy">—</span></div>
+            <div class="bar"><i id="og_energy_bar"></i></div>
+            <p class="organ-hint" id="og_energy_hint">消息消耗 0.004/条 · 睡眠消化回充</p>
+          </div>
+          <div class="organ">
+            <div class="organ-head"><span class="organ-name">🌊 睡眠压强</span><span class="organ-val" id="og_pressure">—</span></div>
+            <div class="bar"><i id="og_pressure_bar"></i></div>
+            <p class="organ-hint">0.65×清醒积累 + 0.35×疲劳——没有"几点该困"</p>
+          </div>
+          <div class="organ">
+            <div class="organ-head"><span class="organ-name">💧 情绪</span><span class="organ-val" id="og_mood">—</span></div>
+            <div class="bar"><i id="og_mood_bar"></i></div>
+            <p class="organ-hint" id="og_mood_hint">八维场按真实时间演化</p>
+          </div>
+          <div class="organ">
+            <div class="organ-head"><span class="organ-name">🩹 伤口</span><span class="organ-val" id="og_wounds">—</span></div>
+            <div class="bar"><i id="og_wounds_bar"></i></div>
+            <p class="organ-hint" id="og_wounds_hint">开放伤口会化脓，全绿自动愈合沉淀瘢痕</p>
+          </div>
+        </div>
+        <div class="alarm" id="pain_alarm" hidden>
+          <strong>她在疼：</strong><span id="pain_alarm_text"></span>
+        </div>
+      </section>
+
+      <!-- 神经 -->
+      <section class="block" id="neuro">
+        <div class="block-head">
+          <h2>神经</h2>
+          <p class="block-note">表达读数——身体状态如何变成说话方式</p>
+        </div>
+        <div class="neuro-rows" id="neuro_rows">
+          <div class="neuro-row"><span class="neuro-k">表达欲</span><div class="bar"><i id="nr_voice"></i></div><span class="neuro-v" id="nr_voice_v">—</span></div>
+          <div class="neuro-row"><span class="neuro-k">认知深度</span><div class="bar"><i id="nr_depth"></i></div><span class="neuro-v" id="nr_depth_v">—</span></div>
+          <div class="neuro-row"><span class="neuro-k">耐心</span><div class="bar"><i id="nr_patience"></i></div><span class="neuro-v" id="nr_patience_v">—</span></div>
+          <div class="neuro-row"><span class="neuro-k">烦躁</span><div class="bar bad"><i id="nr_irrit"></i></div><span class="neuro-v" id="nr_irrit_v">—</span></div>
+          <div class="neuro-row"><span class="neuro-k">输出预算</span><div class="bar"><i id="nr_mul"></i></div><span class="neuro-v" id="nr_mul_v">—</span></div>
+        </div>
+        <p class="help" id="spinal_note">spinal 神经汇把这些读数汇成一次调用：温度偏移 + maxTokens 乘数 + 体感一句话。</p>
+      </section>
+
+      <!-- 自检 -->
+      <section class="block" id="paincheck">
+        <div class="block-head">
+          <h2>全链自检</h2>
+          <button class="btn" id="run_paincheck" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>
+            立即扫描
+          </button>
+        </div>
+        <p class="help">8 探针扫配置到出站全链。发现问题直接注入"痛"——伤口登记+应激，她自己会感觉到并收敛行为；全绿时旧伤自动愈合沉淀瘢痕。</p>
+        <div class="paincheck-items" id="pc_items"><div class="mem-empty">读取中…</div></div>
+      </section>
+
+      <!-- 平台 -->
+      <section class="block" id="platforms">
+        <div class="block-head">
+          <h2>平台</h2>
+          <p class="block-note">关掉即不启动</p>
+        </div>
+        <div class="plats" id="plats">
+          <div class="plat"><div><div class="plat-name">读取中…</div></div></div>
+        </div>
+        <p class="help" style="margin-top:12px">QQ / 微信是常驻聊天服务，B站 / 抖音是定时刷。改动后重启 DSH 完全生效。</p>
+      </section>
+
+      <!-- 用户 -->
+      <section class="block" id="owner">
+        <div class="block-head">
+          <h2>用户</h2>
+          <p class="block-note">认出你，对网友保持距离</p>
+        </div>
+        <div class="field">
+          <label for="owner_qq">QQ 号</label>
+          <div class="control">
+            <input type="text" id="owner_qq" placeholder="3682285116" autocomplete="off" spellcheck="false" inputmode="numeric">
+          </div>
+        </div>
+        <div class="field">
+          <label for="owner_mid">B站 mid</label>
+          <div class="control">
+            <input type="text" id="owner_mid" placeholder="B站数字 UID" autocomplete="off" spellcheck="false" inputmode="numeric">
+          </div>
+        </div>
+        <div class="field">
+          <label for="owner_name">称呼</label>
+          <div class="control">
+            <input type="text" id="owner_name" placeholder="她怎么叫你" autocomplete="off">
+          </div>
+        </div>
+        <div class="field">
+          <label for="owner_wechat">微信 wxid</label>
+          <div class="control">
+            <input type="text" id="owner_wechat" placeholder="可选" autocomplete="off" spellcheck="false">
+            <p class="help">填上微信 wxid 后，微信通道也认得出你。</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- 音色 -->
+      <section class="block" id="voice">
+        <div class="block-head">
+          <h2>音色</h2>
+          <p class="block-note">QQ / 微信语音</p>
+        </div>
+        <div class="field">
+          <label for="voice_sel">音色模型</label>
+          <div class="control">
+            <div class="inline">
+              <select id="voice_sel" style="max-width:300px"></select>
+              <button class="btn" id="voice_test" type="button">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4.7 6.6 8H3v8h3.6L11 19.3z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg>
+                试听
+              </button>
+            </div>
+            <p class="help" id="voice_hint">读取中…</p>
+          </div>
+        </div>
+        <div class="field">
+          <label for="voice_chance">语音概率</label>
+          <div class="control">
+            <div class="range-wrap">
+              <input type="range" id="voice_chance" min="0" max="1" step="0.01" value="0.15" aria-describedby="voice_chance_help">
+              <span class="range-val" id="voice_chance_val">15%</span>
+            </div>
+            <p class="help" id="voice_chance_help">每条回复走语音条的概率。0 = 只打字，1 = 全语音。</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- 作息与限额 -->
+      <section class="block" id="rhythm">
+        <div class="block-head">
+          <h2>作息与限额</h2>
+          <p class="block-note">B站 / 抖音共用</p>
+        </div>
+        <div class="field">
+          <span class="flabel">醒来窗口</span>
+          <div class="control">
+            <div class="inline">
+              <input type="text" class="time" id="night_start" placeholder="20:00" inputmode="numeric" autocomplete="off" aria-label="窗口开始时间">
+              <span class="arrow">→</span>
+              <input type="text" class="time" id="night_end" placeholder="24:00" inputmode="numeric" autocomplete="off" aria-label="窗口结束时间">
+              <span class="help" style="margin-left:4px">窗口内随机挑时刻醒，不整点</span>
+            </div>
+            <p class="help">结束写 <code>24:00</code> 表示到当天结束。</p>
+          </div>
+        </div>
+        <div class="field">
+          <label for="night_wakes">醒来次数</label>
+          <div class="control">
+            <div class="inline">
+              <div class="num"><input type="number" id="night_wakes" min="1" max="12" step="1"><span class="unit">次/天</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="field">
+          <label for="share_daily">每天分享上限</label>
+          <div class="control">
+            <div class="inline">
+              <div class="num"><input type="number" id="share_daily" min="0" max="10" step="1"><span class="unit">次</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="field">
+          <label for="night_maxvideos">每次看几条</label>
+          <div class="control">
+            <div class="inline">
+              <div class="num"><input type="number" id="night_maxvideos" min="1" max="20" step="1"><span class="unit">条</span></div>
+            </div>
+            <p class="help">一次醒来最多看几条视频（选题上限，不是必须看完）。</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- 角色设定 -->
+      <section class="block" id="persona">
+        <div class="block-head">
+          <h2>角色设定</h2>
+          <p class="block-note" id="personaNote">她没有自我迭代的底稿就照旧的活</p>
+        </div>
+        <div class="field">
+          <span class="flabel" id="persona_label">人格底稿</span>
+          <div class="control">
+            <textarea id="persona_text" aria-labelledby="persona_label" spellcheck="false" placeholder="写下她是谁、怎么说话、在意什么……她每次醒来都会读这份设定"></textarea>
+            <div class="inline" style="justify-content:space-between">
+              <div class="flags">
+                <span class="count help" id="personaCount">0 字</span>
+                <span class="flag" id="personaDirty" hidden>未保存</span>
+              </div>
+              <button class="btn primary" id="save_persona" type="button">保存角色设定</button>
+            </div>
+            <p class="help">保存时自动留一份当天的旧版到 <code>persona.history/</code>，写错可以找回。</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- 记忆库 -->
+            <!-- 日记 -->
+      <section class="block" id="diary">
+        <div class="block-head">
+          <h2>日记</h2>
+          <div class="inline">
+            <button class="btn seg" id="diary_owner" type="button" aria-pressed="true">给你的信</button>
+            <button class="btn seg" id="diary_private" type="button" aria-pressed="false">她自己的</button>
+            <button class="btn" id="refresh_diary" type="button">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+              刷新
+            </button>
+          </div>
+        </div>
+        <p class="help" id="diary_meta">—</p>
+        <div class="diary-body" id="diary_text">读取中…</div>
+      </section>
+
+<section class="block" id="memory">
+        <div class="block-head">
+          <h2>记忆库</h2>
+          <button class="btn" id="refresh_mem" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+            刷新
+          </button>
+        </div>
+        <div class="mem-stats" id="mem_stats"></div>
+        <div class="mem" id="mem_list">
+          <div class="mem-empty">读取中…</div>
+        </div>
+      </section>
+    </div>
+  </main>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"><i></i><span></span></div>
+
+<script>
+// 2026-11-04：本页可能挂在子路径（/deepseekharness/dsh_bot/），写死根路径会把整页请求打到站点根 → 404。
+// 这段算法与 client.js 的同名推导必须保持一致；只取 pathname，保持同源。
+const API = (() => {
+  try {
+    const dir = new URL('.', location.href).pathname.replace(/\/+$/, '');
+    return dir.replace(/\/dsh_bot$/, '') + '/dsh_bot/api';
+  } catch { return '/dsh_bot/api'; }
+})();
+
+const $ = (id) => document.getElementById(id);
+const state = { config: {}, voices: [], configPath: '', personaSaved: '', status: null };
+
+/* ── 基础设施 ───────────────────────────────────────────────────────── */
+let toastTimer = 0;
+function toast(msg, isErr) {
+  const t = $('toast');
+  t.querySelector('span').textContent = msg;
+  t.classList.toggle('err', !!isErr);
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), isErr ? 3600 : 2200);
+}
+
+function sync(phase, text) {
+  const box = $('sync');
+  box.classList.toggle('busy', phase === 'busy');
+  box.classList.toggle('err', phase === 'err');
+  $('syncText').textContent = text || (phase === 'busy' ? '写入中…' : phase === 'err' ? '写入失败' : '即时保存已就绪');
+}
+
+async function api(path, opts) {
+  const r = await fetch(API + path, Object.assign({ headers: { 'Content-Type': 'application/json' } }, opts || {}));
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || j.ok === false) throw new Error(j.error || ('HTTP ' + r.status));
+  return j;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+/** 与宿主侧 /api/config 同语义的深合并：对象递归、数组整体替换。 */
+function deepMerge(base, over) {
+  const out = Object.assign({}, base && typeof base === 'object' && !Array.isArray(base) ? base : {});
+  for (const [k, v] of Object.entries(over || {})) {
+    out[k] = v && typeof v === 'object' && !Array.isArray(v) ? deepMerge(out[k], v) : v;
+  }
+  return out;
+}
+
+/** 写配置：成功后同步本地镜像（避免下一次 change 用旧值覆盖刚写的字段）。 */
+async function save(patch, msg) {
+  sync('busy');
+  try {
+    await api('/config', { method: 'POST', body: JSON.stringify(patch) });
+    state.config = deepMerge(state.config, patch);
+    sync('ok');
+    toast(msg || '已保存');
+    return true;
+  } catch (e) {
+    sync('err', '写入失败：' + e.message);
+    toast('保存失败：' + e.message, true);
+    return false;
+  }
+}
+
+/* ── 平台 ───────────────────────────────────────────────────────────── */
+const PLATFORMS = [
+  ['bilibili', 'B站', '定时养鱼：刷视频、写评论、发动态'],
+  ['qq', 'QQ', '常驻聊天 + 语音条 + 说说'],
+  ['wechat', '微信', '私聊秒回（UI 自动化，慢一点）'],
+  ['douyin', '抖音', '定时刷视频、发评论'],
+];
+
+function renderPlatforms() {
+  const box = $('plats');
+  box.innerHTML = '';
+  const p = state.config.platforms || {};
+  for (const [key, label, desc] of PLATFORMS) {
+    const on = p[key] !== false;
+    const row = document.createElement('div');
+    row.className = 'plat';
+    row.innerHTML = `<div><div class="plat-name">${escapeHtml(label)}</div><div class="plat-desc">${escapeHtml(desc)}</div></div>
+      <button class="switch" type="button" role="switch" aria-checked="${on}" aria-label="${escapeHtml(label)}"></button>`;
+    const btn = row.querySelector('.switch');
+    btn.addEventListener('click', async () => {
+      const next = Object.assign({}, state.config.platforms, { [key]: !on });
+      // 双开关语义与 DSH 面板一致：platforms 决定服务起不起，qq/wechat.enabled 决定它起后认不认活。
+      // 只写 platforms 会出现「面板关了、服务照回消息」。
+      const patch = { platforms: next };
+      if (key === 'qq' || key === 'wechat') patch[key] = { enabled: !on };
+      btn.disabled = true;
+      const ok = await save(patch, `${label} 已${!on ? '开启' : '关闭'}（重启 DSH 完全生效）`);
+      btn.disabled = false;
+      if (ok) renderPlatforms();
+    });
+    box.appendChild(row);
+  }
+}
+
+/* ── 概览读数 ───────────────────────────────────────────────────────── */
+const PRESENCE = { online: '在线', away: '暂离', busy: '忙碌', sleeping: '睡觉', offline: '离线' };
+
+function readout(label, dot, value, title) {
+  return `<div class="readout"><div class="readout-k">${escapeHtml(label)}</div>
+    <div class="readout-v"${title ? ` title="${escapeHtml(title)}"` : ''}><span class="dot ${dot}"></span><span>${escapeHtml(value)}</span></div></div>`;
+}
+
+function renderStatus() {
+  const s = state.status;
+  const box = $('readouts');
+  if (!s) {
+    box.innerHTML = readout('调度器', '', '—') + readout('QQ 网关', '', '—') + readout('微信', '', '—') + readout('执行权限', '', '—');
+    $('overviewNote').textContent = '状态读取失败';
+    return;
+  }
+  const sched = s.scheduler || {};
+  const nap = (s.qqChannel && s.qqChannel.snowluma) || {};
+  const beat = s.wxBeat || null;
+  const age = beat && beat.ts ? Math.max(0, Math.round((Date.now() - Number(beat.ts)) / 1000)) : null;
+  const wxOk = age !== null && age <= 120;
+  const perm = s.permission || {};
+  const mood = s.mood || {};
+  const presence = s.presence || null;
+
+  box.innerHTML = [
+    readout('调度器', sched.ok ? 'ok' : 'bad', sched.ok ? '运行中' : '未启动', sched.reason || ''),
+    readout('QQ 网关', nap.ok ? 'ok' : 'bad',
+      nap.ok ? ('在线 · ' + (nap.host || '') + ':' + (nap.port || '')) : '离线',
+      nap.url || ''),
+    readout('微信', wxOk ? 'ok' : (age === null ? 'bad' : 'warn'),
+      age === null ? '无心跳' : (wxOk ? '心跳 ' + age + 's 前' : '心跳停 ' + age + 's'),
+      wxOk ? '' : '微信服务没跑或已卡住'),
+    readout('执行权限', perm.ok ? 'ok' : 'warn', perm.preset || '未知', perm.ok ? '' : '权限不足时记忆写入会静默失败'),
+    readout('心情', 'ok', String(mood.value != null ? mood.value : '—'), '0–100'),
+    readout('饥饿', (Number(mood.hunger) > 70 ? 'warn' : 'ok'), String(mood.hunger != null ? mood.hunger : '—'), '越高越想吃'),
+    readout('存在感', presence ? (presence.key === 'online' ? 'ok' : 'warn') : 'warn',
+      presence ? (PRESENCE[presence.key] || presence.key) : '—', presence ? (presence.why || '') : ''),
+    readout('今日互动', 'ok', '评论 ' + (s.commentsToday || 0) + ' · 分享 ' + (s.sharesToday || 0) + '/' + (s.sharesMax || 0)),
+    readout('干跑', s.dryRun ? 'warn' : 'ok', s.dryRun ? '开（不实际执行）' : '关'),
+    readout('DSH 契约', (s.contract && s.contract.ok) ? 'ok' : 'bad',
+      (s.contract && s.contract.summary) || '未检查',
+      (s.contract && s.contract.dsh && ('dsh ' + s.contract.dsh.version)) || ''),
+  ].join('');
+
+  const bits = [];
+  if (s.plan && s.plan.atText) bits.push('下次醒 ' + s.plan.atText);
+  else bits.push('暂无唤醒计划');
+  bits.push('体检' + (s.selftestPassed ? '通过' : '未通过'));
+  $('overviewNote').textContent = bits.join(' · ');
+}
+
+async function loadStatus() {
+  try {
+    state.status = await api('/status');
+  } catch { state.status = null; }
+  renderStatus();
+  // 2026-11-05: 身体/神经/自检 三页的数据挂钩
+  renderBody(state.status);
+  renderNeuro((state.status || {}).spinal || {});
+  renderPaincheck(state.paincheck || (state.status || {}).paincheck || null);
+}
+
+/* ── 表单填充 ───────────────────────────────────────────────────────── */
+function fillForm() {
+  const c = state.config;
+  const o = c.owner || {};
+  $('owner_qq').value = o.qq || '';
+  $('owner_mid').value = o.mid || '';
+  $('owner_name').value = o.name || '';
+  $('owner_wechat').value = o.wechat || '';
+
+  const n = c.night || {};
+  const w = (n.windows && n.windows[0]) || {};
+  $('night_start').value = w.start || '20:00';
+  $('night_end').value = w.end || '24:00';
+  $('night_wakes').value = w.wakes != null ? w.wakes : 1;
+  $('share_daily').value = c.quota && c.quota.shareDaily != null ? c.quota.shareDaily : 3;
+  $('night_maxvideos').value = c.night && c.night.maxVideos != null ? c.night.maxVideos : 5;
+
+  const chance = c.qq && c.qq.voice_chance != null ? Number(c.qq.voice_chance) : 0.15;
+  $('voice_chance').value = chance;
+  paintRange(chance);
+  // qq.voice_enabled 是总闸：关着时概率滑杆调了也不会发语音条
+  const voiceGate = !(c.qq && c.qq.voice_enabled === false);
+  $('voice_chance').disabled = !voiceGate;
+  $('voice_chance_help').textContent = voiceGate
+    ? '每条回复走语音条的概率。0 = 只打字，1 = 全语音。'
+    : 'QQ 语音总闸（qq.voice_enabled）当前是关的，这条概率不生效。';
+
+  renderVoices();
+  $('cfgpath').textContent = state.configPath || 'bot.config.json';
+}
+
+function paintRange(v) {
+  const el = $('voice_chance');
+  el.style.setProperty('--fill', (Number(v) * 100).toFixed(0) + '%');
+  $('voice_chance_val').textContent = Math.round(Number(v) * 100) + '%';
+}
+
+function renderVoices() {
+  const sel = $('voice_sel');
+  const cur = (state.config.voice && state.config.voice.ref_audio_path) || '';
+  const dir = (state.config.voice && state.config.voice.modelsDir) || '';
+  sel.innerHTML = '';
+  if (!state.voices.length) {
+    const opt = document.createElement('option');
+    opt.value = '';
+    opt.textContent = '没找到音色模型';
+    sel.appendChild(opt);
+    $('voice_hint').innerHTML = '把音色放到 <code>' + escapeHtml(dir || '~/GPT-SoVITS/models') +
+      '</code> 下：每个音色一个目录，含一段参考音频 <code>.wav</code> 和同名 <code>.txt</code> 文本。';
+    $('voice_test').disabled = true;
+    return;
+  }
+  for (const v of state.voices) {
+    const opt = document.createElement('option');
+    opt.value = v.ref_audio_path;
+    opt.textContent = v.name + (v.has_prompt ? '' : ' · 缺参考文本');
+    if (cur && v.ref_audio_path === cur) opt.selected = true;
+    sel.appendChild(opt);
+  }
+  $('voice_test').disabled = false;
+  const chosen = state.voices.find((v) => v.ref_audio_path === sel.value) || {};
+  $('voice_hint').innerHTML = chosen.has_prompt === false
+    ? '这个音色目录里没有 <code>.txt</code> 参考文本，GPT-SoVITS 合成会走默认文本。'
+    : '换音色会同时写入参考音频与参考文本，重启 DSH 生效。';
+}
+
+/* ── 保存绑定 ───────────────────────────────────────────────────────── */
+const TIME_RE = /^([01]?\d|2[0-3])\s*[:：]\s*[0-5]\d$|^24\s*[:：]\s*00$/;
+
+function bind() {
+  const bindText = (id, apply) => {
+    const el = $(id);
+    el.addEventListener('change', () => {
+      el.removeAttribute('aria-invalid');
+      save(apply(el.value.trim()));
+    });
+  };
+
+  bindText('owner_qq', (v) => ({ owner: { qq: v } }));
+  bindText('owner_mid', (v) => ({ owner: { mid: v } }));
+  bindText('owner_name', (v) => ({ owner: { name: v } }));
+  bindText('owner_wechat', (v) => ({ owner: { wechat: v } }));
+
+  // 作息：只改第一个窗口，别把多窗口配置换成单元素
+  const saveNight = () => {
+    const s = $('night_start'), e = $('night_end');
+    s.removeAttribute('aria-invalid'); e.removeAttribute('aria-invalid');
+    const start = s.value.trim() || '20:00';
+    const end = e.value.trim() || '24:00';
+    let bad = false;
+    if (!TIME_RE.test(start)) { s.setAttribute('aria-invalid', 'true'); bad = true; }
+    if (!TIME_RE.test(end)) { e.setAttribute('aria-invalid', 'true'); bad = true; }
+    if (bad) { toast('时间格式应为 20:00 或 24:00', true); return; }
+    const wakes = Math.max(1, Math.min(12, Number($('night_wakes').value) || 1));
+    const wins = ((state.config.night && Array.isArray(state.config.night.windows)) ? state.config.night.windows : []).slice();
+    wins[0] = Object.assign({}, wins[0] || {}, { start, end, wakes });
+    $('night_wakes').value = wakes;
+    save({ night: { windows: wins } }, `作息已保存：${start} → ${end}，醒 ${wakes} 次`);
+  };
+  $('night_start').addEventListener('change', saveNight);
+  $('night_end').addEventListener('change', saveNight);
+  $('night_wakes').addEventListener('change', saveNight);
+
+  const clampSave = (id, min, max, fallback, build) => {
+    $(id).addEventListener('change', () => {
+      const raw = $(id).value.trim();
+      const n = raw === '' ? fallback : Math.max(min, Math.min(max, Number(raw) || 0));
+      $(id).value = n;
+      save(build(n));
+    });
+  };
+  clampSave('share_daily', 0, 10, 3, (n) => ({ quota: { shareDaily: n } }));
+  clampSave('night_maxvideos', 1, 20, 5, (n) => ({ night: { maxVideos: n } }));
+
+  $('voice_chance').addEventListener('input', (e) => paintRange(e.target.value));
+  $('voice_chance').addEventListener('change', (e) => {
+    const v = Math.max(0, Math.min(1, Number(e.target.value) || 0));
+    paintRange(v);
+    save({ qq: { voice_chance: v } }, '语音概率已保存：' + Math.round(v * 100) + '%');
+  });
+
+  $('voice_sel').addEventListener('change', () => {
+    const v = state.voices.find((x) => x.ref_audio_path === $('voice_sel').value);
+    if (!v) return;
+    const voice = Object.assign({}, state.config.voice, {
+      ref_audio_path: v.ref_audio_path,
+      prompt_text: v.prompt_text || (state.config.voice && state.config.voice.prompt_text) || '',
+    });
+    save({ voice }, '音色已切换为「' + v.name + '」').then((ok) => { if (ok) renderVoices(); });
+  });
+
+  $('voice_test').addEventListener('click', async () => {
+    const v = state.voices.find((x) => x.ref_audio_path === $('voice_sel').value);
+    if (!v) { toast('先选一个音色', true); return; }
+    const btn = $('voice_test');
+    btn.disabled = true;
+    toast('合成中…');
+    try {
+      await api('/voice-test', { method: 'POST', body: JSON.stringify({ ref_audio_path: v.ref_audio_path, prompt_text: v.prompt_text }) });
+      toast('已合成并发送到 QQ（看手机）');
+    } catch (e) {
+      toast('试听失败：' + e.message, true);
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  const ta = $('persona_text');
+  const syncPersonaState = () => {
+    $('personaCount').textContent = ta.value.length + ' 字';
+    const dirty = ta.value !== state.personaSaved;
+    $('personaDirty').hidden = !dirty;
+    $('save_persona').disabled = !dirty;
+    $('save_persona').textContent = dirty ? '保存角色设定' : '已保存';
+  };
+  ta.addEventListener('input', syncPersonaState);
+  ta.addEventListener('keydown', (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
+      e.preventDefault();
+      if (ta.value !== state.personaSaved) $('save_persona').click();
+    }
+  });
+
+  $('save_persona').addEventListener('click', async () => {
+    const btn = $('save_persona');
+    btn.disabled = true;
+    sync('busy');
+    try {
+      await api('/persona', { method: 'POST', body: JSON.stringify({ text: ta.value }) });
+      state.personaSaved = ta.value;
+      sync('ok');
+      toast('角色设定已保存，她下次醒来就照这个活');
+    } catch (e) {
+      sync('err', '写入失败：' + e.message);
+      toast('保存失败：' + e.message, true);
+    } finally {
+      btn.disabled = false;
+      syncPersonaState();
+    }
+  });
+
+  $('refresh_mem').addEventListener('click', loadMemory);
+
+/* ── 日记（2026-11-05）──────────────────────────────────────────── */
+let diaryBook = 'owner';
+async function loadDiary() {
+  try {
+    const r = await api('/diary?book=' + diaryBook);
+    const box = $('diary_text');
+    if (!r.exists) { box.textContent = r.book === 'owner' ? '她还没写过第一封信。' : '她还没写给自己。'; $('diary_meta').textContent = '—'; return; }
+    box.textContent = r.text || '（空）';
+    const d = r.mtime ? new Date(r.mtime) : null;
+    $('diary_meta').textContent = `${r.entries} 篇 · 最后写于 ${d ? d.toLocaleString('zh-CN') : '—'} · 只读（日记是她的手笔）`;
+  } catch (e) { $('diary_text').textContent = '读取失败：' + e.message; }
+}
+function switchDiary(book) {
+  diaryBook = book;
+  $('diary_owner').setAttribute('aria-pressed', String(book === 'owner'));
+  $('diary_private').setAttribute('aria-pressed', String(book === 'private'));
+  loadDiary();
+}
+$('diary_owner').addEventListener('click', () => switchDiary('owner'));
+$('diary_private').addEventListener('click', () => switchDiary('private'));
+$('refresh_diary').addEventListener('click', loadDiary);
+  $('reload').addEventListener('click', () => boot(true));
+
+  // 导航高亮：判据是"视口阅读带中心落在哪一段"，不是 IntersectionObserver 的相交集合 ——
+  // 首屏会有 4 段同时相交，靠回调顺序决定高亮，实测永远错一段；
+  // 滚到文档末尾时最后几段也永远进不了带（页面到底，scrollIntoView 顶不到顶）。
+  const links = Array.from(document.querySelectorAll('.nav a'));
+  const pairs = links
+    .map((a) => ({ a, el: document.querySelector(a.getAttribute('href')) }))
+    .filter((x) => x.el);
+  let paintRaf = 0;
+  const paint = () => {
+    paintRaf = 0;
+    // 判据 = 已滚过视口顶部的那一段（"你正在看的"），不是阅读带中心：
+    // 中心判据在短段上会跳到下一段（滚到「音色」高亮「作息」）。
+    // 到底时特判最后一段 —— 页尾几段永远滚不过顶部线。
+    const atBottom = window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 2;
+    let cur = pairs[0];
+    if (atBottom) {
+      cur = pairs[pairs.length - 1];
+    } else {
+      const anchor = window.scrollY + 80;
+      for (const x of pairs) {
+        if (x.el.getBoundingClientRect().top + window.scrollY <= anchor) cur = x;
+      }
+    }
+    for (const x of pairs) {
+      if (x === cur) x.a.setAttribute('aria-current', 'true');
+      else x.a.removeAttribute('aria-current');
+    }
+  };
+  const requestPaint = () => { if (!paintRaf) paintRaf = requestAnimationFrame(paint); };
+  window.addEventListener('scroll', requestPaint, { passive: true });
+  window.addEventListener('resize', requestPaint, { passive: true });
+  paint();
+}
+
+/* ── 记忆 ───────────────────────────────────────────────────────────── */
+async function loadMemory() {
+  const list = $('mem_list');
+  const stats = $('mem_stats');
+  try {
+    const j = await api('/memory');
+    const st = j.stats || {};
+    const by = st.byPlatform || {};
+    stats.innerHTML = [
+      ['对话', st.episodes || 0],
+      ['世界设定', st.lore || 0],
+      ['用户事实', st.facts || 0],
+    ].map(([k, v]) => `<span class="chip">${k} <b>${v}</b></span>`).join('')
+      + Object.keys(by).map((k) => `<span class="chip">${escapeHtml(k)} <b>${by[k]}</b></span>`).join('');
+
+    const rows = (j.recent || []).slice().reverse();
+    if (!rows.length) {
+      list.innerHTML = '<div class="mem-empty">还没有记忆。她第一次醒来、第一次跟你说话之后，这里会出现她记住的片段。</div>';
+      return;
+    }
+    list.innerHTML = rows.map((e) => {
+      const who = e.role === 'assistant' ? '她' : '对方';
+      const plat = String(e.chatId || '').split(':')[0] || e.platform || '';
+      return `<div class="mem-row"><div class="mem-who">${who}</div>
+        <div class="mem-body">${plat ? `<span class="mem-tag">${escapeHtml(plat)}</span>` : ''}${escapeHtml((e.text || '').slice(0, 160))}</div></div>`;
+    }).join('');
+  } catch (e) {
+    stats.innerHTML = '';
+    list.innerHTML = `<div class="mem-empty">读记忆失败：${escapeHtml(e.message)}<br>宿主可能刚重启，点「刷新」重试。</div>`;
+  }
+}
+
+/* ── 启动 ───────────────────────────────────────────────────────────── */
+function fatal(e) {
+  const box = $('fatal');
+  box.hidden = false;
+  box.className = 'fatal';
+  box.innerHTML = `<h3>载入失败：${escapeHtml(e.message)}</h3>
+    <p>确认插件已在 DSH 里加载（宿主半边 dsh_bot 活着），并且是从本机或可信反代访问。</p>
+    <button class="btn primary" type="button" id="fatalRetry">重试</button>`;
+  $('fatalRetry').addEventListener('click', () => boot(true));
+}
+
+async function boot(isReload) {
+  $('fatal').hidden = true;
+  if (!isReload) sync('busy', '读取配置…');
+  try {
+    const j = await api('/config');
+    state.config = j.config || {};
+    state.voices = j.voices || [];
+    state.configPath = j.configPath || '';
+    $('cfgpath').textContent = state.configPath || 'bot.config.json';
+    renderPlatforms();
+    fillForm();
+    if (!isReload) bind();
+    sync('ok');
+  } catch (e) {
+    sync('err', '读取失败');
+    fatal(e);
+    return;
+  }
+
+  const p = await api('/persona').catch(() => ({ text: '' }));
+  const ta = $('persona_text');
+  if (p.readError) toast('人格文件读取失败：' + p.readError, true);
+  ta.value = p.text || '';
+  state.personaSaved = ta.value;
+  $('personaCount').textContent = ta.value.length + ' 字';
+  $('personaDirty').hidden = true;
+  $('save_persona').disabled = true;
+  $('save_persona').textContent = p.exists ? '已保存' : '保存角色设定';
+  $('personaNote').textContent = p.exists
+    ? '改动下次醒来生效 · 旧版自动留档'
+    : '还没有人格文件，写下第一版';
+
+  loadStatus();
+  loadMemory();
+  loadDiary();
+  api('/paincheck').then((r) => { state.paincheck = r; renderPaincheck(r); }).catch(() => { /* 没跑过就不显示 */ });
+  // 状态里的心跳是"距今多少秒"，页开着时每 30 秒刷一次才不会说谎。
+  // 只注册一次：重载走 boot(true)，重复注册会累积计时器。
+  if (!state.ticker) state.ticker = setInterval(() => { if (!document.hidden) loadStatus(); }, 30000);
+}
+
+boot(false);
+</script>
+</body>
+</html>

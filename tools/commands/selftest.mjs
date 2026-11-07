@@ -1,0 +1,265 @@
+import { gatewayBase } from '../lib/qq-gateway.mjs'
+// selftest —— 启动体检：装完立刻跑这一条（bili-whale 实战里"绝大多数人卡住的地方"）。
+// 检查：配置 / 凭据 / 格式 / 登录态（真打一次 nav）/ 数据目录可写 / 熔断状态 / ffmpeg（可选）。
+// 通过后写 ~/.data/selftest-passed.json，结尾打印"接下来要做的两件事"。
+//
+//   node bot.mjs selftest [--json]
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { execFileSync } from 'node:child_process'
+import { configPath, dataPath, credentialsPath, WORK_DIR, diaryPath } from '../lib/paths.mjs'
+import { config } from '../lib/config.mjs'
+import { apiGet, makeHeaders, apiState } from '../lib/bili-api.mjs'
+import { loadCred, looksLikeJct } from '../lib/cred.mjs'
+import { swallow } from '../lib/swallow.mjs'
+
+export async function run(argv = []) {
+  const json = argv.includes('--json')
+  const items = []
+
+  const add = (name, ok, detail) => items.push({ name, ok: !!ok, detail: String(detail ?? '') })
+
+  // ① 配置文件
+  const cfg = config()
+  add('配置文件', true, `${configPath}${cfg.__hasUserFile ? '（已自定义）' : '（用默认值 —— 也可以，但建议写一份）'}`)
+
+  // ② 凭据文件
+  let cred = null
+  try {
+    cred = loadCred()
+    const problems = []
+    if (!cred.sessdata) problems.push('SESSDATA 空着')
+    if (!cred.bili_jct) problems.push('bili_jct 空着')
+    else if (!looksLikeJct(cred.bili_jct)) problems.push(`bili_jct 格式可疑（${cred.bili_jct.length} 位，应是 32 位十六进制）`)
+    if (!cred.buvid3) problems.push('buvid3 空着（可选，但建议带上）')
+    add('凭据文件', !problems.length, problems.length ? problems.join('；') : `已就绪：${credentialsPath}`)
+  } catch (e) {
+    add('凭据文件', false, e.message)
+  }
+
+  // ③ 登录态（真打一次 nav —— 缓存 10 分钟）+ 凭据账号身份检查
+  let self = null
+  if (cred?.sessdata) {
+    try {
+      // ⚠️ 登录态一律不吃缓存：10-25 实锤 —— 缓存让人以为还登着用户的号，
+      //    实际凭据早已换成养号（改了凭据但 nav 命中旧缓存 → 体检谎报身份 → 判断全歪）。
+      const res = await apiGet('https://api.bilibili.com/x/web-interface/nav', makeHeaders(cred), { noCache: true })
+      if (Number(res?.code) === 0 && res.data?.isLogin) {
+        self = { mid: String(res.data.mid), name: String(res.data.uname) }
+        add('B站 登录态', true, `已登录：${self.name}（mid ${self.mid}）`)
+        // 防呆：凭据必须是鱼自己的小号。用用户的号发「@用户」= 用户 @ 自己，永远收不到通知
+        // （10-24 实锤：评论发出且公开可见，用户却毫无感知）。
+        const ownerMid = String(cfg.owner?.mid ?? '')
+        if (ownerMid && self.mid === ownerMid) {
+          add('凭据账号', false, `现在登录的是用户自己的号（${self.name}）—— 鱼用它 @ 用户 = 自己 @ 自己，B站不发通知！`
+            + ` 请在浏览器登录鱼的号（御坂美琴Rosie）后重新提交凭据`)
+        } else {
+          add('凭据账号', true, `鱼的号：${self.name} —— 分享 @ 用户（${cfg.owner?.name ?? '?'}）会真正弹通知`)
+        }
+      } else {
+        add('B站 登录态', false, `未登录：${res?.message ?? 'nav 未返回登录态'} —— SESSDATA 大概率复制时截断，双击 Value 全选再复制`)
+      }
+    } catch (e) { add('B站 登录态', false, e.message) }
+  } else add('B站 登录态', false, '没有 SESSDATA，跳过')
+
+  // ④ 数据目录可写（记忆/账本/情绪都住这里）
+  // 10-31：这一项以前只说"能不能写"，但最常见的失败是 **DSH 沙箱**而不是文件权限：
+  //   宿主上 docker exec 跑 selftest 全绿，她自己的会话里却 EACCES —— 因为 DSH 的
+  //   workspace-write 只允许写 session.cwd（~/.dsh/bot-work），而记忆在 ~/.data。
+  // 现在把原因写清楚，并告诉人怎么修（面板「修复记忆写入」或 session 权限设 danger-full-access）。
+  try {
+    fs.mkdirSync(dataPath(), { recursive: true })
+    const probe = dataPath('.write-probe')
+    fs.writeFileSync(probe, 'ok'); fs.rmSync(probe)
+    add('数据目录', true, dataPath())
+  } catch (e) {
+    const msg = String(e?.message ?? e)
+    const sandboxish = /EACCES|EPERM|permission denied/i.test(msg)
+    const hasDsh = !!(process.env.DSH_HOME || process.env.DSH_SESSION_ID)
+    const hint = sandboxish
+      ? (hasDsh
+        ? ' —— 这是 DSH 文件沙箱（workspace-write 只允许写会话工作目录）；把 panel「修复记忆写入」点一下，或把该会话权限设成 danger-full-access'
+        : ' —— 文件权限问题：检查 ~/.data 的属主与 mode（应 700/600）')
+      : ''
+    add('数据目录', false, msg + hint)
+  }
+
+  // ⑤ 工作目录（会话 cwd + 两本日记）
+  try {
+    fs.mkdirSync(WORK_DIR, { recursive: true })
+    add('工作目录', true, `${WORK_DIR}（日记：${diaryPath('owner').split(/[\\/]/).pop()} + ${diaryPath('private').split(/[\\/]/).pop()}）`)
+  } catch (e) { add('工作目录', false, e.message) }
+
+  // ⑥ node 运行时（自证：本命令正在 node 里跑）
+  add('node 运行时', true, `v${process.versions.node}（selftest 正在用它跑）`)
+
+  // ⑦ ffmpeg（可选 —— 只有将来的"抽帧看画面"要它，v0.1 不用）
+  let ffmpeg = false
+  try { execFileSync('ffmpeg', ['-version'], { timeout: 8000, windowsHide: true }); ffmpeg = true } catch (e) { swallow(e, 'selftest:add') }
+  add('ffmpeg（可选）', true, ffmpeg ? '已安装（v0.2 抽帧可用）' : '未安装 —— 不影响 v0.1，想要就 winget install Gyan.FFmpeg')
+
+  // ⑧ 熔断状态
+  const api = apiState()
+  add('B站接口状态', !api.banned, api.banned ? `熔断中（${api.banWhy}），约剩 ${api.banMinutesLeft} 分钟 —— 撞风控了，等它自己恢复` : `正常（缓存 ${api.cacheEntries} 条）`)
+
+  // ⑨ 用户信息（分享 @ 的对象）
+  const ownerOk = !!(cfg.owner?.mid && cfg.owner?.name)
+  add('用户信息', ownerOk, ownerOk ? `${cfg.owner.name}（mid ${cfg.owner.mid}）—— 分享评论会 @ TA` : 'owner.mid / owner.name 没填 —— @ 不了人，务必补上')
+
+  // ⑩ 干跑状态（dabot 铁律：第一周 DRY_RUN）
+  add('风控模式', true, cfg.guard?.dryRun ? 'DRY_RUN 开着 ✓ —— 所有发送只打印不真发，观察满意后改 false' : '⚠️ DRY_RUN 已关 —— 真发了，注意额度与风控')
+
+  // ── 可选平台依赖（不影响 B站核心体检；缺了 B站那条线照常用）─────────────
+  // ⑪ LLM 直连（QQ/抖音实时响应用）
+  const hasLLMKey = !!(process.env.DEEPSEEK_API_KEY || cfg.llm?.api_key)
+  add('LLM 直连（可选）', true, hasLLMKey ? '有 API key（QQ/抖音可实时响应）' : '未设 DEEPSEEK_API_KEY / llm.api_key —— 接 QQ/抖音前补上（B站不受影响）')
+
+  // ⑫ QQ（SnowLuma）
+  const snowlumaUrl = gatewayBase(cfg)
+  let snowlumaOk = false
+  try { const c = new AbortController(); setTimeout(() => c.abort(), 1500); await fetch(snowlumaUrl, { signal: c.signal }); snowlumaOk = true } catch (e) { swallow(e, 'selftest:best-effort') }
+  add('QQ·OneBot 网关（SnowLuma）', true, snowlumaOk ? `OneBot 网关已连（${snowlumaUrl}）` : 'OneBot 网关未启动 —— 先确认 snowluma.service 在跑且已登录 QQ')
+
+  // ⑬ TTS（GPT-SoVITS）
+  const sovitsUrl = cfg.voice?.sovits_url || 'http://127.0.0.1:9880/tts'
+  let ttsOk = false
+  try { const c = new AbortController(); setTimeout(() => c.abort(), 1500); await fetch(sovitsUrl, { method: 'POST', signal: c.signal, body: '{}' }); ttsOk = true } catch (e) { swallow(e, 'selftest:best-effort') }
+  add('语音 TTS（可选）', true, ttsOk ? `GPT-SoVITS 已连（${sovitsUrl}）` : 'GPT-SoVITS 未启动 —— 发 QQ 语音前先装（xiaoxiao 音色）')
+
+  // ⑬b 参考文本是否和参考音频对得上（10-26 用户报"语音和视频里反复出现同一句话"）
+  // 错配时 GPT-SoVITS 会把参考文本一起念出来 —— 这条不查出来，语音听起来就像"记忆错乱"
+  try {
+    const { refTextOf } = await import('../lib/tts.mjs')
+    const ref = cfg.voice?.ref_audio_path || ''
+    const configured = String(cfg.voice?.prompt_text || '').trim()
+    const truth = refTextOf(ref)
+    if (!ref) add('语音参考文本', true, '没配参考音频（用默认音色）')
+    else if (truth && configured && truth !== configured) {
+      add('语音参考文本', false,
+        `配置里的参考文本和「${ref.split(/[\\/]/).pop()}」说的话不一样 —— `
+        + `配置：「${configured.slice(0, 24)}…」实际：「${truth.slice(0, 24)}…」。`
+        + '这会让每次合成把参考文本也念出来（语音/视频里反复冒同一句）。'
+        + `修：把 voice.prompt_text 改成「${truth.slice(0, 40)}」`)
+    } else if (!truth && configured) add('语音参考文本', true, '模型目录没有转写文件，按配置里的来（无法自动核对）')
+    else add('语音参考文本', true, `和参考音频对齐：「${(truth || configured).slice(0, 30)}」`)
+  } catch (e) { add('语音参考文本', true, '跳过（' + String(e.message).slice(0, 40) + '）') }
+
+  // 情绪参考段（L2）：库在不在、文件有没有丢、起伏够不够 —— 参考段就是输出的天花板
+  try {
+    const { emotionRefs } = await import('../lib/tts.mjs')
+    const lib = emotionRefs()
+    const keys = Object.keys(lib)
+    if (!keys.length) {
+      add('情绪参考段', true, '还没建（可选：node bot.mjs voice emo build）—— 现在用默认音色 + 择优')
+    } else {
+      const missing = keys.filter((k) => !lib[k]?.wav || !fs.existsSync(lib[k].wav))
+      const flat = keys.filter((k) => Number(lib[k]?.sd) < 3.6)
+      if (missing.length) add('情绪参考段', false, `这些情绪段的音频丢了：${missing.join('/')} —— 重跑 voice emo build --force`)
+      else if (flat.length) add('情绪参考段', true, `${keys.length} 套可用；偏平的：${flat.join('/')}（会靠默认音色的候选兜底）`)
+      else add('情绪参考段', true, `${keys.length} 套可用：${keys.join('/')}`)
+    }
+  } catch (e) { add('情绪参考段', true, '跳过（' + String(e.message).slice(0, 40) + '）') }
+
+  // 账本（10-26）：她自己查饭钱的那条路必须通 —— 会话日志能读、python 侧能解多帧 zstandard、
+  // 缓存是新的。这条挂了，她就会退回去反复问用户"我们还有钱吗"（那就又断圈了）。
+  try {
+    const L = await import('../lib/ledger.mjs')
+    // 10-31 审计：以前这里先查 python 存不存在，没有就直接判 ✗ —— 但账本现在有纯 Node 兜底，
+    // python 缺失不再是致命项。改成：直接跑 usage()，真读不到数据才提示。
+    {
+      const u = await L.usage({})
+      const days = Array.isArray(u.days) ? u.days.length : 0
+      const b = L.readBrief()
+      const total = u.lifetime?.mine?.total ?? 0
+      if (!days) {
+        add('账本', true, '账本可用（' + (u.via === 'node' ? '纯 Node 解码' : 'python') + '），但会话日志里还没有模型用量 —— 她跑完第一次对话就会出数字')
+      } else if (!b) {
+        add('账本', true, `${days} 天记录（她累计 ${(total / 1e4).toFixed(1)} 万 token）；摘要缓存还没生成，下次唤醒会自动刷`)
+      } else if (b.stale) {
+        add('账本', true, `${days} 天记录；摘要缓存 ${Math.round((Date.now() - b.at) / 60000)} 分钟前的（tick 每 10 分钟刷）`)
+      } else {
+        add('账本', true, `${days} 天记录；${b.line.slice(0, 60)}`)
+      }
+    }
+  } catch (e) { add('账本', false, '查账失败：' + String(e.message).slice(0, 80)) }
+
+  // 视频生产（第 17 轮）：真剪辑靠 ffmpeg 的 xfade/zoompan/subtitles/loudnorm + 中文字体。
+  // 少一样就出不了片 —— 而这台机器上的 ffmpeg 藏在 D:/rvc/bin，PATH 里没有。
+  try {
+    const V = await import('../lib/video.mjs')
+    const ff = V.ffmpegBin()
+    const fps = V.specOf('bili')
+    const fontOk = fs.existsSync(V.fontFile())
+    const filters = (() => {
+      try { return V.run(ff, ['-hide_banner', '-filters']) } catch { return '' }
+    })()
+    const haveAll = ['xfade', 'zoompan', 'subtitles', 'loudnorm', 'sidechaincompress']
+      .filter((f) => !new RegExp(`\\s${f}\\s`).test(filters))
+    if (!fs.existsSync(ff) && ff !== 'ffmpeg') add('视频生产', false, `找不到 ffmpeg（${ff}）—— 成片做不出来`)
+    else if (haveAll.length) add('视频生产', false, `这个 ffmpeg 缺滤镜：${haveAll.join('/')}，剪不出真片子`)
+    else if (!fontOk) add('视频生产', true, 'ffmpeg 就绪；但没找到中文字体，字幕会变方块（配 video.font 指一个 ttf）')
+    else {
+      const { locked, describe } = await import('../lib/debut.mjs')
+      // 最近一条成片的音画偏差（sync.json 由 makeFilm 逐句算：配音包络对齐到成片音轨上）
+      const syncNote = (() => {
+        try {
+          const root = V.postsDir('bili')
+          const dirs = fs.readdirSync(root).filter((d) => fs.existsSync(path.join(root, d, 'sync.json'))).sort()
+          if (!dirs.length) return ''
+          const last = dirs[dirs.length - 1]
+          const rows = JSON.parse(fs.readFileSync(path.join(root, last, 'sync.json'), 'utf8'))
+          const worst = rows.reduce((a, b) => (Math.abs(Number(b.delta) || 0) > Math.abs(Number(a.delta) || 0) ? b : a), { delta: 0 })
+          const w = Math.abs(Number(worst.delta) || 0)
+          return `；最近一条音画最大偏差 ${w.toFixed(2)}s${w > 0.3 ? ' ⚠ 建议重剪' : ''}`
+        } catch { return '' }
+      })()
+      add('视频生产', true, `${ff.split(/[\\/]/).pop()} · ${fps.w}×${fps.h} · 字幕/BGM/转场齐全${syncNote}；${describe()}`)
+    }
+  } catch (e) { add('视频生产', false, '视频模块起不来：' + String(e.message).slice(0, 80)) }
+
+  // B站社交流水（第 17 轮）：她要"在 B站 活着"，用户就得看得见 —— 流水文件得能读、摘要能生成。
+  try {
+    const S = await import('../lib/social-log.mjs')
+    const recs = S.read({ days: 7 })
+    const st = S.stats(recs)
+    const invisible = recs.filter((r) => !r.toOwner).length
+    if (!st.length) {
+      add('B站社交记录', true, '流水还是空的（她还没在 B站 发过言；跑 bot social --backfill 可补历史台账）')
+    } else {
+      const today = new Date().toLocaleDateString('sv-SE')
+      const t = st.find((d) => d.day === today)
+      add('B站社交记录', true, `7 天 ${recs.length} 条（没 @ 用户的 ${invisible} 条）；今天 ${t ? S.countLine(t) : '还没动'}`)
+    }
+  } catch (e) { add('B站社交记录', false, '流水读不出：' + String(e.message).slice(0, 80)) }
+
+
+  const allOk = items.every(i => i.ok)
+  if (allOk) {
+    try { fs.mkdirSync(dataPath(), { recursive: true }); fs.writeFileSync(dataPath('selftest-passed.json'), JSON.stringify({ at: new Date().toISOString(), node: process.versions.node })) } catch (e) { swallow(e, 'selftest:syncNote') }
+  }
+
+  if (json) { console.log(JSON.stringify({ ok: allOk, items, self, dryRun: !!cfg.guard?.dryRun }, null, 2)); process.exit(allOk ? 0 : 1) }
+
+  for (const it of items) console.log(`${it.ok ? '✓' : '✗'} ${it.name}：${it.detail}`)
+  console.log('')
+  console.log(allOk ? '══════════ 全部通过 ✓ 可以用了 ══════════' : '══════════ 有 ✗ —— 照着上面每一行的提示修 ══════════')
+  console.log('')
+  console.log('── 接下来要做的两件事（很多人卡在这）──')
+  console.log('')
+  console.log('  ① 【找到她的会话】')
+  console.log('     插件启动时会自动开一个会话，位置在：')
+  console.log('       左侧「工作区」→ 展开「未分组」→ 里面那个 bot')
+  console.log('     ⚠️ 不点开「未分组」是看不见它的 —— 这一步最容易漏')
+  console.log('')
+  console.log('  ② 【给她完全权限】')
+  console.log('     打开那个会话 → 权限设置 → 选「完全访问 / danger-full-access」')
+  console.log('     否则她起来后跑不了命令、看不了视频、写不了日记')
+  console.log('')
+  if (cfg.guard?.dryRun) {
+    console.log('  ③ 【观察一周再关 DRY_RUN】')
+    console.log('     bot.config.json → guard.dryRun: true → false 之后她才会真发评论')
+    console.log('')
+  }
+  process.exit(allOk ? 0 : 1)
+}

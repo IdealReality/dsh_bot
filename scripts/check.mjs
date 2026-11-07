@@ -1,0 +1,1434 @@
+#!/usr/bin/env node
+// 质量门禁 —— 一条命令拦住「语法坏 / 动态 import 断链 / 命令未注册 / 敏感文件权限过宽」
+//
+//   node scripts/check.mjs          # 全量
+//   node scripts/check.mjs --fast   # 只查语法（pre-commit 用）
+//
+// 为什么要有它：10-31 的事故里——
+//   · bili-watch.mjs 缺一对引号 → 解析期就死，整条链路不可用
+//   · produce.mjs 的自动投稿块粘错位置 → TDZ 崩溃，首条解锁命令失效
+//   · wander/dream 用了 dataPath('bot-ai/xxx') 双前缀 → 素材永远读不到，静默
+//   · qq-server 引 '../lib/wander.mjs'（实际在 commands/）→ 每 60s 静默失败
+// 下面 5 条检查，每一条都能独立拦下上面至少一个事故。
+import { execFileSync } from 'node:child_process'
+import fs from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+import { closeIfHealed } from '../tools/lib/wound.mjs'
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+const FAST = process.argv.includes('--fast')
+const problems = []
+const notes = []
+const rel = (p) => path.relative(ROOT, p)
+
+function walk(dir, out = []) {
+  if (!fs.existsSync(dir)) return out
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (e.name === 'node_modules' || e.name.startsWith('.') || /\.bak[-.]/.test(e.name)) continue
+    const p = path.join(dir, e.name)
+    if (e.isDirectory()) walk(p, out)
+    else if (/\.(mjs|cjs|js)$/.test(e.name)) out.push(p)
+  }
+  return out
+}
+const push = (kind, file, detail) => problems.push({ kind, file, detail })
+
+// ── 1. 语法 ────────────────────────────────────────────────────────────────
+function checkSyntax(files) {
+  for (const f of files) {
+    // 门禁自己也要有超时：`node --check` 遇到超大/畸形文件可能卡住
+    try { execFileSync(process.execPath, ['--check', f], { stdio: 'pipe', timeout: 15_000, killSignal: 'SIGKILL' }) }
+    catch (e) {
+      const msg = String(e.stderr || e.message).split('\n').filter(Boolean).slice(0, 4).join('\n      ')
+      push('语法错误', rel(f), msg)
+    }
+  }
+}
+
+// ── 2. 模块路径断链（静态解析，不执行代码）──────────────────────────────────
+const EXTS = ['', '.mjs', '.js', '.cjs', '.json', '/index.mjs', '/index.js']
+function resolves(from, spec) {
+  const base = path.resolve(path.dirname(from), spec)
+  return EXTS.some((x) => { try { return fs.statSync(base + x).isFile() } catch { return false } })
+}
+/**
+ * 去掉注释（保留字符串内容与行号）。
+ *
+ * ⚠️ v5 深度排查发现的一个**门禁自身 bug**：
+ * 旧实现是两条正则（一条去块注释、一条去行注释）。
+ * 第二条会把**字符串里的 `//`** 当成注释开始 —— 而项目里到处都是
+ * `path.replace(/\//g, path.sep)` 这种写法。结果整行后半段被抹成空格，
+ * 于是：
+ *   · 后面的 `timeout: 20000` 看不见 → 误报"没有超时"
+ *   · 更糟的是反过来：注释开始的判断错了，也可能把**真实代码当注释删掉** → 漏报
+ * 一个质量门禁自己会吃掉被检查的代码，是最危险的 bug：它会静默放过真问题。
+ *
+ * 现在改成逐字符扫描：正确识别普通字符串、模板字符串、正则字面量、行注释、块注释。
+ */
+function stripComments(src) {
+  let out = ''
+  let i = 0
+  const n = src.length
+  // 上一个"有意义的"字符，用来判断 / 是除号还是正则开头
+  let prevSignificant = ''
+  while (i < n) {
+    const c = src[i]
+    const c2 = src[i + 1]
+    // 行注释
+    if (c === '/' && c2 === '/') {
+      while (i < n && src[i] !== '\n') { out += ' '; i++ }
+      continue
+    }
+    // 块注释（保留换行，行号不变）
+    if (c === '/' && c2 === '*') {
+      out += '  '
+      i += 2
+      while (i < n && !(src[i] === '*' && src[i + 1] === '/')) {
+        out += src[i] === '\n' ? '\n' : ' '
+        i++
+      }
+      if (i < n) { out += '  '; i += 2 }
+      continue
+    }
+    // 字符串 / 模板
+    if (c === '"' || c === "'" || c === '`') {
+      const quote = c
+      out += c; i++
+      while (i < n) {
+        const d = src[i]
+        if (d === '\\') { out += d + (src[i + 1] || ''); i += 2; continue }
+        out += d; i++
+        if (d === quote) break
+        if (d === '\n' && quote !== '`') break   // 未闭合的字符串，别吃掉整文件
+      }
+      prevSignificant = quote
+      continue
+    }
+    // 正则字面量：只有出现在"运算符位置"的 / 才是正则开头
+    if (c === '/' && (prevSignificant === '' || /[=(,:;!&|?{}\[\]\n]/.test(prevSignificant) || /\b(?:return|typeof|case)\b/.test(out.slice(-8)))) {
+      out += c; i++
+      let closed = false
+      while (i < n) {
+        const d = src[i]
+        if (d === '\\') { out += d + (src[i + 1] || ''); i += 2; continue }
+        if (d === '\n') break                    // 正则不能跨行
+        out += d; i++
+        if (d === '/') { closed = true; break }
+        if (d === '[') {                        // 字符组里允许 /
+          while (i < n && src[i] !== ']') { out += src[i]; i++ }
+          if (i < n) { out += ']'; i++ }
+        }
+      }
+      if (closed) { prevSignificant = '/'; continue }
+      prevSignificant = c
+      continue
+    }
+    if (!/\s/.test(c)) prevSignificant = c
+    out += c
+    i++
+  }
+  return out
+}
+
+function checkSpecifiers(files) {
+  const re = /(?:\bfrom\s*|\bimport\s*\(\s*)['"]([^'"]+)['"]/g
+  for (const f of files) {
+    const raw = fs.readFileSync(f, 'utf8')
+    const src = stripComments(raw)
+    let m
+    while ((m = re.exec(src)) !== null) {
+      const spec = m[1]
+      if (!spec.startsWith('.')) continue
+      if (resolves(f, spec)) continue
+      const line = src.slice(0, m.index).split('\n').length
+      push('模块断链', `${rel(f)}:${line}`, `import '${spec}' 解析不到文件`)
+    }
+    // import( 后面跟着裸相对路径（10-31 bili-watch 事故原型）
+    // import(pathVar) / import(`tpl`) / import(cond ? a : b) 都是合法写法，不报
+    const m2 = /\bimport\(\s*(\.{1,2}\/[^'"\s\)]+)/.exec(src)
+    if (m2) {
+      const line = src.slice(0, m2.index).split('\n').length
+      push('import 缺引号', `${rel(f)}:${line}`, `import(${m2[1]}) 缺引号`)
+    }
+  }
+}
+
+// ── 3. dataPath 双前缀（10-31 wander/dream 事故原型）────────────────────────
+function checkDataPathPrefix(files) {
+  for (const f of files) {
+    const src = stripComments(fs.readFileSync(f, 'utf8'))
+    const m = /dataPath\(\s*['"]bot-ai\//.exec(src)
+    if (m) {
+      const line = src.slice(0, m.index).split('\n').length
+      push('dataPath 双前缀', `${rel(f)}:${line}`,
+        "dataPath 已指向 ~/.data，再拼 'bot-ai/' 会变成 ~/.data/bot-ai/…（读不到且静默）")
+    }
+  }
+}
+
+// ── 3.5 数据目录：禁止绕过 dataDir 直接拼旧目录名（2026-11-02）─────────────
+// 事故：数据目录改名 .feiyu-ai → .data 时，把代码里的 .feiyu-ai 批量换成了 .bot-ai
+// （另一个旧名），而 homePath() 不走 dataDir 的回退链 → 18 处读空目录：
+// 人格文件 0 字、1,386 张贴纸一张看不到、锚/线索/头像全空，而门禁一直是全绿。
+// 规则：运行代码里出现 homePath('.bot-ai' 或 homePath('.feiyu-ai' 一律报错。
+// 唯一例外：迁移/恢复脚本（它们的工作就是读旧目录）。
+const MIGRATION_ALLOW = [
+  'scripts/check.mjs',              // 规则自身含有这些字面量
+  'tools/lib/paths.mjs',            // dataDir 回退链本身，必须能提旧目录
+  'tools/migrate-memory-10-27.mjs',
+  'tools/restore-memory-10-27.mjs',
+  'tools/drill-promise.mjs',
+  'tools/fix-owner-profile.mjs',
+]
+function checkLegacyDataDir(files) {
+  for (const f of files) {
+    const r = rel(f)
+    if (MIGRATION_ALLOW.includes(r)) continue
+    const src = stripComments(fs.readFileSync(f, 'utf8'))
+    const m = /homePath\(\s*['"](?:\.bot-ai|\.feiyu-ai)['"]/.exec(src)
+    if (m) {
+      const line = src.slice(0, m.index).split('\n').length
+      push('旧数据目录', `${r}:${line}`,
+        "homePath('.bot-ai'/'.feiyu-ai') 绕过了 dataDir 回退链（会读空目录且静默）—— 改用 dataPath(...)")
+    }
+  }
+}
+
+// ── 4. 命令注册表：只在 COMMANDS 对象字面量内取 key ─────────────────────────
+function checkCommandRegistry() {
+  const entry = path.join(ROOT, 'tools/bot.mjs')
+  const cmdDir = path.join(ROOT, 'tools/commands')
+  // 2026-11-03 去静默（评审③第 3 条）：检查跑不了=门禁瞎了，瞎了还报绿是最危险的状态。
+  if (!fs.existsSync(entry) || !fs.existsSync(cmdDir)) { problems.push({ kind: '门禁检查失效', file: 'scripts/check.mjs', detail: '命令注册检查无法执行：tools/bot.mjs 或 tools/commands 不在 —— 检查对象丢了本身就是事故' }); return }
+  const src = fs.readFileSync(entry, 'utf8')
+  const start = src.indexOf('const COMMANDS')
+  if (start < 0) { problems.push({ kind: '门禁检查失效', file: 'tools/bot.mjs', detail: '找不到 const COMMANDS —— 注册表结构变了，命令注册检查整条失效（旧版此处静默跳过还报绿）' }); return }
+  // 从 { 开始做括号配平，取出对象字面量
+  let i = src.indexOf('{', start), depth = 0, end = -1
+  for (let k = i; k < src.length; k++) {
+    if (src[k] === '{') depth++
+    else if (src[k] === '}') { depth--; if (depth === 0) { end = k; break } }
+  }
+  if (end < 0) { problems.push({ kind: '门禁检查失效', file: 'tools/bot.mjs', detail: 'COMMANDS 括号不配平 —— 文件本身语法坏了，注册检查失效（旧版此处静默跳过还报绿）' }); return }
+  const body = src.slice(i, end)
+  const declared = new Set([...body.matchAll(/^\s{2}(['"]?)([a-z][a-z0-9-]{1,30})\1\s*:/gm)].map((m) => m[2]))
+  const files = fs.readdirSync(cmdDir).filter((n) => n.endsWith('.mjs')).map((n) => n.replace(/\.mjs$/, ''))
+
+  // 有文件却没注册 = 跑 bot <name> 会提示未知命令
+  for (const name of files) if (!declared.has(name)) {
+    push('命令未注册', `tools/commands/${name}.mjs`, `COMMANDS 里没有 '${name}'`)
+  }
+  // 注册了却没文件 = 一定 500
+  for (const name of declared) if (!files.includes(name)) {
+    push('注册但无文件', 'tools/bot.mjs', `声明了 '${name}' 但 tools/commands/${name}.mjs 不存在`)
+  }
+  notes.push(`命令注册表：${declared.size} 个已注册 / ${files.length} 个命令文件`)
+}
+
+// ── 5. 敏感文件权限 ────────────────────────────────────────────────────────
+function checkPerms() {
+  if (process.platform === 'win32') { notes.push('跳过权限检查（Windows）'); return }
+  const HOME = process.env.USERPROFILE || process.env.HOME || ''
+  const targets = [
+    [path.join(HOME, '.dsh/bot.config.json'), 0o600],
+    [path.join(HOME, '.bot-ai/credentials.json'), 0o600],
+  ]
+  for (const [t, want] of targets) {
+    if (!fs.existsSync(t)) continue
+    const mode = fs.statSync(t).mode & 0o777
+    if (mode & 0o077) push('权限过宽', t, `mode=${mode.toString(8)}，应 ${want.toString(8)}（含 token/凭据）`)
+  }
+}
+
+// ── 6. 空 catch 密度（10-31）───────────────────────────────────────────────
+// 不追求清零：best-effort（探活、缓存、可选依赖）本来就该 catch。
+// 但一个文件里过半的 catch 都是空的 = 那块代码出错你永远不会知道。
+// 阈值 65%：只拦"整块逻辑被吞掉"的文件，正常文件不会被误报。
+function checkEmptyCatch(files) {
+  const MAX_RATIO = 0.65
+  const MIN_CATCH = 8
+  for (const f of files) {
+    const src = fs.readFileSync(f, 'utf8')
+    const total = (src.match(/\bcatch\b/g) || []).length
+    if (total < MIN_CATCH) continue
+    const empty = (src.match(/catch\s*(?:\([^)]*\))?\s*\{\s*(?:\/\*[\s\S]*?\*\/\s*)?\}/g) || []).length
+    const bare = (src.match(/catch\s*(?:\([^)]*\))?\s*\{\s*\}/g) || []).length
+    if (bare > 0) {
+      push('空 catch 未加注释', rel(f), String(bare) + ' 处裸 catch 空块（无注释）—— best-effort/回滚类必须带同行注释说明为何可吞；record/通知失败类要 console.warn 或 swallow')
+    }
+    const ratio = empty / total
+    if (ratio > MAX_RATIO) {
+      push('空 catch 过多', rel(f), empty + '/' + total + ' = ' + (ratio * 100).toFixed(0) + '%（阈值 ' + (MAX_RATIO * 100) + '%）—— 这块出错不会留下任何痕迹')
+    }
+  }
+}
+
+// ── 6.5 同步函数被当异步用（v5）─────────────────────────────────────────
+// 为什么加这条：v5 重构时我把 `setTimeout(() => mindTick(), 30_000)`
+// 改成了 `void mindTick().catch(...)`，而 mindTick 是**同步**函数（返回 undefined）。
+// 结果 30 秒后线上炸 "TypeError: Cannot read properties of undefined (reading 'catch')"，
+// 直接把 DSH 主进程带崩（fatal uncaught exception → 容器重启）。
+// 语法检查、断链、测试全都没拦住 —— 因为代码"语法正确、逻辑也在"，
+// 只是把一个返回值当 Promise 用了。这类错误必须静态扫出来。
+function checkSyncThenable(files) {
+  for (const f of files) {
+    // 必须剥掉注释再扫 —— 注释里写 "以前是 `x().catch()`" 这种说明也会被误报
+    // （v5 自测时就被自己的注释绊了一次）。stripComments 已在第 2 条检查里定义。
+    const src = stripComments(fs.readFileSync(f, 'utf8'))
+    const syncNames = new Set()
+    for (const m of src.matchAll(/^[ \t]*(?:const|let|var)[ \t]+([A-Za-z_$][\w$]*)[ \t]*=[ \t]*(?:function[ \t]*)?\([^)]*\)[ \t]*=>/gm)) {
+      if (!/\basync\b/.test(m[0])) syncNames.add(m[1])
+    }
+    for (const m of src.matchAll(/^[ \t]*function[ \t]+([A-Za-z_$][\w$]*)[ \t]*\(/gm)) {
+      if (!/\basync\b/.test(m[0])) syncNames.add(m[1])
+    }
+    for (const name of syncNames) {
+      const esc = name.replace(/\$/g, '\\$')
+      // 前面不能是 `.` —— 否则会把 `res.json(...)` 这种**方法调用**误判成
+      // 本地同名函数（v5 第一条就误报了 json()）。也排除 `?.`。
+      const re = new RegExp('(?<![.\\w$])' + esc + '\\([^)]*\\)[ \\t]*\\.\\s*(catch|then|finally)\\b', 'g')
+      let m
+      while ((m = re.exec(src)) !== null) {
+        const line = src.slice(0, m.index).split('\n').length
+        push('同步函数当异步用', `${rel(f)}:${line}`, `${name}() 是同步函数（未声明 async），对它调 .${m[1]}() 会抛 TypeError`)
+      }
+    }
+  }
+}
+
+// ── 9.5 引用了从未声明的标识符（2026-11-01 真事故）──────────────────────
+// 为什么加：qq-server.mjs 里有一行 `if (smartHook) hooks.push(... + smartHook)`，
+// 而 smartHook **全文没有任何声明**。它在 try 之外，每次主动搭话 tick 都抛
+// ReferenceError，被外层 catch 吞掉 → 表现为"主动搭话 100% 失败"，
+// 一天 31 次，一次都没说出口。语法检查通过、断链通过、42 套测试全绿、门禁全绿。
+//
+// 与第 6.5 条（同步当异步）同一类：语法正确、逻辑看似在，运行期才炸。
+// 静态能抓的特征：一个裸标识符在 `if (x)` / `(x)` / `+ x` 之类位置被读，
+// 但同文件里既没有 `const/let/var/function/class x`、也不是形参、
+// 也不是 import 进来的、也不是已知全局。宁可少量误报，也别再让这类静默失效溜过。
+function checkUndeclaredIdentifiers(files) {
+  // JS 保留字/字面量：绝不能被当"未声明变量"
+  const KEYWORDS = new Set([
+    'true', 'false', 'null', 'undefined', 'new', 'delete', 'typeof', 'instanceof', 'void',
+    'in', 'of', 'return', 'if', 'else', 'for', 'while', 'do', 'switch', 'case', 'break',
+    'continue', 'try', 'catch', 'finally', 'throw', 'function', 'class', 'extends', 'super',
+    'this', 'async', 'await', 'yield', 'import', 'export', 'from', 'as', 'default', 'const',
+    'let', 'var', 'static', 'get', 'set', 'with', 'debugger', 'enum', 'implements',
+    'interface', 'package', 'private', 'protected', 'public',
+  ])
+  const KNOWN = new Set([
+    'process', 'console', 'require', 'module', 'exports', '__dirname', '__filename', 'Buffer',
+    'globalThis', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'setImmediate',
+    'queueMicrotask', 'structuredClone', 'fetch', 'URL', 'URLSearchParams', 'AbortController',
+    'TextEncoder', 'TextDecoder', 'Promise', 'JSON', 'Math', 'Date', 'Number', 'String',
+    'Boolean', 'Array', 'Object', 'Map', 'Set', 'WeakMap', 'WeakSet', 'Symbol', 'BigInt',
+    'Error', 'TypeError', 'RangeError', 'SyntaxError', 'RegExp', 'Function', 'Intl',
+    'isNaN', 'isFinite', 'parseInt', 'parseFloat', 'decodeURIComponent', 'encodeURIComponent',
+    'decodeURI', 'encodeURI', 'undefined', 'NaN', 'Infinity', 'arguments', 'this',
+    'global', 'crypto', 'performance', 'localStorage', 'document', 'window', 'navigator',
+    'onmessage', 'postMessage', 'self', 'importScripts',
+  ])
+  for (const f of files) {
+    if (!/\.(mjs|js|cjs)$/.test(f)) continue
+    const raw = fs.readFileSync(f, 'utf8')
+    const src = stripComments(raw)
+
+    const declared = new Set()
+    // 声明：const/let/var/function/class
+    // 一行多声明：`let rows = 0, imported = 0, skipped = 0` —— 只抓第一个会漏后面全部
+    // （全量跑第二版就被它坑了 3 处误报：imported / skipped / chat）。
+    for (const m of src.matchAll(/\b(?:const|let|var)\s+([^;\n]+)/g)) {
+      // 按顶层逗号切（粗略：不处理嵌套逗号，够用）
+      let depth = 0, cur = ''
+      const parts = []
+      for (const ch of m[1]) {
+        if ('([{'.includes(ch)) depth++
+        else if (')]}'.includes(ch)) depth--
+        if (ch === ',' && depth === 0) { parts.push(cur); cur = '' } else cur += ch
+      }
+      parts.push(cur)
+      for (const part of parts) {
+        const k = part.split('=')[0].trim().replace(/^\.\.\./, '').replace(/^[\{\[]/, '').split(':').pop().trim().replace(/[\}\]].*$/, '')
+        if (/^[A-Za-z_$][\w$]*$/.test(k)) declared.add(k)
+      }
+    }
+    for (const m of src.matchAll(/\b(?:const|let|var)\s*[\{\[]\s*([^}=]*)[\}\]]\s*=/g)) {
+      for (const part of m[1].split(',')) {
+        const k = part.split(':').pop().trim().replace(/^\.\.\./, '')
+        if (/^[A-Za-z_$][\w$]*$/.test(k)) declared.add(k)
+      }
+    }
+    for (const m of src.matchAll(/\bfunction\s*\*?\s*([A-Za-z_$][\w$]*)/g)) declared.add(m[1])
+    for (const m of src.matchAll(/\bclass\s+([A-Za-z_$][\w$]*)/g)) declared.add(m[1])
+    // import
+    for (const m of src.matchAll(/\bimport\s+([^;'"]+?)\s+from\b/g)) {
+      for (const part of m[1].replace(/[{}]/g, ',').split(',')) {
+        const k = part.trim().split(/\s+as\s+/).pop().replace(/^\*$/, '').replace(/^\*/, '').trim()
+        if (/^[A-Za-z_$][\w$]*$/.test(k)) declared.add(k)
+      }
+    }
+    // 形参（含解构）
+    for (const m of src.matchAll(/\(([^()]*)\)\s*=>/g)) {
+      for (const part of m[1].split(',')) {
+        const k = part.split('=')[0].split(':').pop().trim().replace(/^[.\s]*/, '').replace(/[{}[\]]/g, '')
+        if (/^[A-Za-z_$][\w$]*$/.test(k)) declared.add(k)
+      }
+    }
+    for (const m of src.matchAll(/\bfunction\s*\*?\s*[A-Za-z_$][\w$]*\s*\(([^)]*)\)/g)) {
+      for (const part of m[1].split(',')) {
+        const k = part.split('=')[0].split(':').pop().trim().replace(/^[.\s]*/, '').replace(/[{}[\]]/g, '')
+        if (/^[A-Za-z_$][\w$]*$/.test(k)) declared.add(k)
+      }
+    }
+    // 函数形参整段是解构对象：`function search({ cues, chat = '', x = {} } = {})`
+    // 外层 `{…} = {}` 里既有 = 又有嵌套，上面那条按 `\{([^{}]*=[^{}]*)\}` 匹配不到。
+    // 这里改为「取每个函数/箭头的小括号内容，再从中抠所有 `{…}` 块，逐个按逗号切」。
+    {
+      // ⚠️ 不能用 [^()]* —— 形参里有 `Date.now()` 这种内嵌括号，
+      // 会在第一个 `)` 处截断（第一版就栽在这，`search({...chat = ''...})` 一直误报）。
+      // 必须做括号配平：从 `(` 开始数到深度归零。
+      const paramBlocks = []
+      const grabParens = (startIdx) => {
+        let depth = 0
+        for (let k = startIdx; k < src.length; k++) {
+          const ch = src[k]
+          if (ch === '(') depth++
+          else if (ch === ')') {
+            depth--
+            if (depth === 0) return src.slice(startIdx + 1, k)
+          }
+        }
+        return ''
+      }
+      for (const m of src.matchAll(/\bfunction\s*\*?\s*[A-Za-z_$]?[\w$]*\s*\(/g)) {
+        paramBlocks.push(grabParens(m.index + m[0].length - 1))
+      }
+      for (const m of src.matchAll(/\)\s*=>/g)) { /* 箭头函数：用上面的方法反推不方便，改在下面统一抓 */ }
+      {
+        // 箭头函数形参：`(...) =>` / `x =>`，用配平法从每个 `(`
+        for (let i = 0; i < src.length; i++) {
+          if (src[i] !== '(') continue
+          const inner = grabParens(i)
+          const after = src.slice(i + inner.length + 2).match(/^\s*=>/)
+          if (after) paramBlocks.push(inner)
+        }
+      }
+      for (const block of paramBlocks) {
+        // 普通形参也要用**配平后**的整段来切。
+        // 旧写法（上面那条 `\(([^)]*)\)`）遇到 `now = Date.now()` 会在第一个 `)` 处截断，
+        // 后面的形参全部丢失 —— 实测 2026-11-07 她新写的 research/engine.mjs:
+        // `export function finalize(state, now = Date.now(), why = '')` 被误报
+        // "why 从未声明"（其实是第三个形参）。规则误报比漏报更坏：久了没人看。
+        for (const part of block.split(',')) {
+          const k = part.split('=')[0].split(':').pop().trim()
+            .replace(/^\.\.\./, '').replace(/[{}\[\]]/g, '').trim()
+          if (/^[A-Za-z_$][\w$]*$/.test(k)) declared.add(k)
+        }
+        for (const br of block.matchAll(/\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}/g)) {
+          for (const part of br[1].split(',')) {
+            const k = part.split('=')[0].split(':').pop().trim().replace(/^\.\.\./, '').replace(/[{}\[\]]/g, '')
+            if (/^[A-Za-z_$][\w$]*$/.test(k)) declared.add(k)
+          }
+        }
+      }
+    }
+    // 解构形参带默认值：`{ write = true, proxy = false }` / `({ a, b = 1 })`
+    // 这是最容易漏的一类 —— 全量跑第一版就漏了 10 处，全是它导致的误报。
+    for (const m of src.matchAll(/\{\s*([^{}]*=[^{}]*)\}/g)) {
+      for (const part of m[1].split(',')) {
+        const k = part.split('=')[0].split(':').pop().trim().replace(/^\.\.\./, '').replace(/[{}[\]]/g, '')
+        if (/^[A-Za-z_$][\w$]*$/.test(k)) declared.add(k)
+      }
+    }
+    // 方法简写里的参数：invalidate(resetPlan = false) { … }
+    for (const m of src.matchAll(/[A-Za-z_$][\w$]*\s*\(([^()]*=[^()]*)\)\s*\{/g)) {
+      for (const part of m[1].split(',')) {
+        const k = part.split('=')[0].split(':').pop().trim().replace(/^[.\s]*/, '').replace(/[{}[\]]/g, '')
+        if (/^[A-Za-z_$][\w$]*$/.test(k)) declared.add(k)
+      }
+    }
+    for (const m of src.matchAll(/catch\s*\(\s*([A-Za-z_$][\w$]*)/g)) declared.add(m[1])
+    // 循环变量 / for-of
+    for (const m of src.matchAll(/\bfor\s*\(\s*(?:const|let|var)\s+([A-Za-z_$][\w$]*)/g)) declared.add(m[1])
+
+    // 只在"被当作自由变量读取"的高信噪比位置取样：
+    //   if (x) / while (x) / !x / (x) / + x  —— 且 x 不在声明集合里
+    const suspects = new Set()
+    // 只取 `if (x)` / `while (x)` —— 这两个位置是"把变量当布尔读"的典型，
+    // 且几乎不会被字符串/注释污染。低信噪比的取样（!x 之类）已去掉。
+    for (const m of src.matchAll(/\b(?:if|while)\s*\(\s*([A-Za-z_$][\w$]*)\s*\)/g)) suspects.add(m[1])
+    // 2026-11-04 补采样（P1）：**if/while 条件里的成员访问根名**，且必须是 `?.` 形态。
+    // 真实案例：`if (N === 0 && ex.vitals?.presence)` —— `ex` 从未在文件里声明
+    // 或声明在后面（TDZ），每 20 拍抛一次被吞掉，旧门禁只认 `if (x)` 的裸标识符，全绿。
+    //
+    // 口径严格：`名 ?. 名`（可选链）。普通 `名.名` 会命中
+    // `for (const [k, list] of ...)`、字符串拼接里的路径词、`import {a,b}` 成员名等
+    // 一堆结构 —— 实测放进普通点号后立刻涨 46 处假阳性。可选链在真实代码里只会是读取。
+    // 另外：'声明在后面' 不归这条管，归 checkTdz。
+    const condChunks = []
+    for (const m of src.matchAll(/\b(?:if|while)\s*\(/g)) {
+      let depth = 0
+      for (let k = m.index + m[0].length - 1; k < src.length; k++) {
+        if (src[k] === '(') depth++
+        else if (src[k] === ')') { depth--; if (depth === 0) { condChunks.push(src.slice(m.index + m[0].length, k)); break } }
+      }
+    }
+    for (const chunk of condChunks) {
+      for (const m of chunk.matchAll(/(?<![\w$.])([A-Za-z_$][\w$]*)\s*\?\.[A-Za-z_$]/g)) suspects.add(m[1])
+    }
+
+    for (const name of suspects) {
+      if (KEYWORDS.has(name) || KNOWN.has(name) || declared.has(name)) continue
+      // 排除：紧跟在 `.` 后面的是属性名
+      const re = new RegExp('(?<![.\\w$])' + name.replace(/\\$/g, '\\\\$') + '\\b', 'g')
+      let hit = false
+      for (const m of src.matchAll(re)) {
+        const before = src.slice(Math.max(0, m.index - 1), m.index)
+        if (before === '.') continue
+        hit = true
+        break
+      }
+      if (!hit) continue
+      const line = src.slice(0, src.search(re)).split('\n').length
+      push('引用了未声明的变量', `${rel(f)}:${line}`, `\`${name}\` 在这个文件里从未声明（也不是形参/import/全局）—— 运行期会抛 ReferenceError，被 catch 吞掉就成静默失效`)
+    }
+
+    // ── 补采样③（2026-11-04）：块内 const/let 在声明行**之前**被读（TDZ）──
+    // 真实事故：heartbeat.mjs 第 167 行 `ex.vitals?.presence`，而 `const ex` 在第 202 行。
+    // 语法检查通过、9.5 的 `if (x)` 采样看不见（读的是 `ex.prop`），ReferenceError
+    // 被 try/catch 吞掉 → 存在感器官从上线起一次都没跑过，门禁全绿。
+    // 规则（保守，只抓单一词法声明）：某个名字在本文件里**只有一次** const/let 声明，
+    // 且该名字不出现在形参/var/function/class/import 里（那些会提升或遮蔽），
+    // 则声明之前、**同一花括号块内**的任何读取都是 TDZ。读在更内层块也仍是 TDZ。
+    checkTdz(src, f, push, rel)
+  }
+}
+
+/**
+ * 把字符串/模板/正则字面量的**内容**抹成空格（保留换行与引号本身），只给"块边界"
+ * 这类结构判定用。`stripComments` 保留字符串内容（其他检查需要），但字符串里的
+ * `{` `}` `view` `--from` 会让结构判定错位 —— 实测它把 53 处真误报塞进 TDZ 检查。
+ * @param {string} src 源码
+ * @returns {string} 同长度、同换行、字面量内容被空格填充的文本
+ */
+function maskLiterals(src) {
+  const out = src.split('')
+  let i = 0
+  const n = src.length
+  let prev = ''
+  while (i < n) {
+    const c = src[i]
+    if (c === '"' || c === "'" || c === '`') {
+      const q = c
+      i++
+      while (i < n) {
+        if (src[i] === '\\') { out[i] = ' '; i++; if (i < n) { out[i] = ' '; i++ } continue }
+        if (src[i] === q) break
+        if (src[i] !== '\n') out[i] = ' '
+        i++
+      }
+      i++
+      prev = q
+      continue
+    }
+    if (c === '/' && (prev === '' || /[=(,:;!&|?{}\[\]\n]/.test(prev))) {
+      let j = i + 1
+      let inClass = false
+      let ok = false
+      while (j < n) {
+        const d = src[j]
+        if (d === '\\') { j += 2; continue }
+        if (d === '\n') break
+        if (d === '[') inClass = true
+        else if (d === ']') inClass = false
+        else if (d === '/' && !inClass) { ok = true; break }
+        j++
+      }
+      if (ok) {
+        for (let k = i + 1; k < j; k++) if (out[k] !== '\n') out[k] = ' '
+        i = j + 1
+        prev = '/'
+        continue
+      }
+    }
+    if (!/\s/.test(c)) prev = c
+    i++
+  }
+  return out.join('')
+}
+
+/**
+ * TDZ 检测：名字**只有一处** const/let 声明时，声明之前在同一块内的读取必然抛 ReferenceError。
+ *
+ * 为什么不用 AST：门禁是零依赖脚本（只有 node 内建），而这条规则只需要
+ * 「块身份 + 行号」。块身份用「每行行首的最内层 `{` 偏移」表示：
+ * 声明与读取落在同一个最内层块，才可能是同一个绑定的 TDZ。
+ *
+ * 口径是**宁可漏报**：
+ *   · 名字有多处 const/let 声明 → 不猜（不同块里各有一个同名变量很正常）
+ *   · var/function/class/import/形参/catch 参数同名 → 会提升或遮蔽，跳过
+ *   · 读取位于更深的嵌套块 → 拿不到可靠证据，跳过（heartbeat 的真实案例在同一块内，仍会命中）
+ *   · 对象字面量的键（`{ why: ... }`）与方法简写不算读取
+ * @param {string} src 已去注释的源码（行号与源文件一致）
+ * @param {string} f 绝对路径
+ * @param {Function} push 报告函数
+ * @param {Function} rel 相对路径化
+ */
+function checkTdz(src, f, push, rel) {
+  const masked = maskLiterals(src)
+  const lines = masked.split('\n')
+  // 每行行首的"最内层块"标识 = 该层 `{` 的行号（-1 表示顶层）
+  const blockAtLine = new Array(lines.length + 1).fill(-1)
+  {
+    const stack = []
+    for (let ln = 1; ln <= lines.length; ln++) {
+      blockAtLine[ln] = stack.length ? stack[stack.length - 1] : -1
+      for (const ch of lines[ln - 1]) {
+        if (ch === '{') stack.push(ln)
+        else if (ch === '}') stack.pop()
+      }
+    }
+  }
+
+  const decls = new Map()      // name -> { line, block }
+  const ambiguous = new Set()
+  // 关键字 / 字面量：`import { a } from 'x'` 里的 `from` 会被当成同名读取 —— 直接跳过
+  const NOISE = new Set(['from', 'as', 'of', 'in', 'typeof', 'instanceof', 'new', 'delete', 'void',
+    'true', 'false', 'null', 'undefined', 'this', 'super', 'await', 'yield', 'return', 'case'])
+  const hoisted = new Set()
+  for (const m of src.matchAll(/\bvar\s+([A-Za-z_$][\w$]*)/g)) hoisted.add(m[1])
+  for (const m of src.matchAll(/\bfunction\s*\*?\s*([A-Za-z_$][\w$]*)/g)) hoisted.add(m[1])
+  for (const m of src.matchAll(/\bclass\s+([A-Za-z_$][\w$]*)/g)) hoisted.add(m[1])
+  for (const m of src.matchAll(/\bcatch\s*\(\s*([A-Za-z_$][\w$]*)/g)) hoisted.add(m[1])
+  for (const m of src.matchAll(/\bimport\s+([^;'"]+?)\s+from\b/g)) {
+    for (const part of m[1].replace(/[{}]/g, ',').split(',')) {
+      const k = part.trim().split(/\s+as\s+/).pop().trim()
+      if (/^[A-Za-z_$][\w$]*$/.test(k)) hoisted.add(k)
+    }
+  }
+  for (const m of src.matchAll(/\bfunction\s*\*?\s*[A-Za-z_$]?[\w$]*\s*\(([^()]*)\)/g)) {
+    for (const part of m[1].split(',')) {
+      const k = part.split('=')[0].split(':').pop().trim().replace(/^[.\s]*/, '').replace(/[{}[\]]/g, '')
+      if (/^[A-Za-z_$][\w$]*$/.test(k)) hoisted.add(k)
+    }
+  }
+  for (const m of src.matchAll(/\(([^()]*)\)\s*=>/g)) {
+    for (const part of m[1].split(',')) {
+      const k = part.split('=')[0].split(':').pop().trim().replace(/^[.\s]*/, '').replace(/[{}[\]]/g, '')
+      if (/^[A-Za-z_$][\w$]*$/.test(k)) hoisted.add(k)
+    }
+  }
+  for (const m of src.matchAll(/\bfor\s*\(\s*(?:const|let)\s+([A-Za-z_$][\w$]*)/g)) ambiguous.add(m[1])
+  // 方法简写的形参：`load(spec) {` / `get(x) {` —— 旧实现只认 `function f(` 与 `(...)=>`
+  for (const m of src.matchAll(/(?:^|[{;,])\s*([A-Za-z_$][\w$]*)\s*\(([^()]*)\)\s*\{/gm)) {
+    for (const part of m[2].split(',')) {
+      const k = part.split('=')[0].split(':').pop().trim().replace(/^[.\s]*/, '').replace(/[{}[\]]/g, '')
+      if (/^[A-Za-z_$][\w$]*$/.test(k)) hoisted.add(k)
+    }
+  }
+  // 对象字面量里的属性赋值左值（`spec: 1`）与解构键不是变量读取
+  for (const m of src.matchAll(/[{,]\s*([A-Za-z_$][\w$]*)\s*:/g)) ambiguous.add(m[1])
+
+  for (const m of src.matchAll(/\b(?:const|let)\s+([A-Za-z_$][\w$]*)\s*=/g)) {
+    const name = m[1]
+    if (NOISE.has(name) || hoisted.has(name) || ambiguous.has(name)) continue
+    const line = src.slice(0, m.index).split('\n').length
+    if (decls.has(name)) { decls.delete(name); ambiguous.add(name); continue }
+    decls.set(name, { line, block: blockAtLine[line] })
+  }
+
+  for (const [name, decl] of decls) {
+    if (decl.line <= 1) continue
+    const wordRe = new RegExp('(?<![.\\w$])' + name.replace(/\$/g, '\\$') + '\\b', 'g')
+    // 声明那行的 blockAtLine 记录的是"该行行首所处的块"。若 `const` 出现在
+    // 行中（`for (...) { const x = ... }`、同一行写了两个语句），行首深度会浅一层，
+    // 于是把外层整片代码都算成同一块 —— 那正是 fix-owner/browser 两处误报的成因。
+    // 修正：只有当声明是**该行第一个非空白 token**时，才用行首深度作为块身份。
+    const declLineText = lines[decl.line - 1] || ''
+    const declAtLineStart = /^\s*(?:const|let)\b/.test(declLineText)
+    const declBlock = declAtLineStart ? decl.block : null
+    if (declBlock === null) continue                    // 行中声明：块身份不可靠，不猜
+    for (let ln = decl.line - 1; ln >= Math.max(1, decl.line - 200); ln--) {
+      if (!/^\s*(?:const|let)\b/.test(lines[ln - 1] || '')) {
+        // 只接受"行首就是这条声明"的块身份；其余行的行首深度未必等于它在块内的真实层级
+      }
+      if (blockAtLine[ln] !== declBlock) continue       // 不同块（或更深的嵌套块）：不猜
+      const text = lines[ln - 1] || ''
+      // 读取出现在**闭包体**里（`=> …` / `function …`）时不是 TDZ：那个体要到
+      // 声明执行之后才调用。真实反例：browser.mjs 的 `new Promise((resolve) => {
+      //  … resolve !== go … })` 后面才 `const go` —— 运行期完全合法。
+      if (/=>|\bfunction\b/.test(text)) continue
+      let hit = false
+      for (const mm of text.matchAll(wordRe)) {
+        const before = text.slice(0, mm.index).replace(/\s+$/, '')
+        const after = text.slice(mm.index + name.length)
+        const isKey = /^\s*:/.test(after) && /(?:^|[{,[])$/.test(before)   // `{ why: ... }` / `, why: ...`
+        const isShorthandMethod = /^\s*\(/.test(after) && /(?:^|[{,])\s*$/.test(before) && /\{\s*$/.test(text.slice(text.indexOf(after) + after.indexOf('('))) === false
+        if (isKey) continue
+        hit = true
+        break
+      }
+      if (!hit) continue
+      push('TDZ 声明前读取', `${rel(f)}:${ln}`,
+        `\`${name}\` 在第 ${decl.line} 行才 \`const/let\` 声明，第 ${ln} 行同一块内就读取了 —— 运行期抛 "Cannot access before initialization"，被 catch 吞掉即成静默失效（heartbeat.mjs 的 presence 器官就是这样死了两周）`)
+      break
+    }
+  }
+}
+
+// ── 10. 没有超时的网络/子进程调用（v5 深度排查）────────────────────────
+// 为什么加：这一轮查出 4 处 fetch 和 6 处 ffmpeg execFileSync **完全没有 timeout**。
+// 后果不是"慢"，是**永久挂死**：fetch 等到 TCP 超时（可达数分钟），
+// execFileSync 会把整个 Node 进程钉死（事件循环停摆 → 她一个字都不回）。
+//
+// 判定策略（宁可漏报，不要误报）：
+//   取"这一行 + 之后 12 行"，出现 timeout / signal / AbortSignal 就算通过。
+//   误报会让人把门禁关掉，那比漏报更糟（这个教训来自 v5 自己：
+//   我第一版按括号配对扫，结果被 `'-v', 'error'` 里的括号和正则 .exec 骗了三次）。
+function checkNoTimeout(files) {
+  for (const f of files) {
+    const src = stripComments(fs.readFileSync(f, 'utf8'))
+    const lines = src.split('\n')
+    lines.forEach((l, i) => {
+      // 窗口必须**双向**：2026-11-02 补扫 client.js 时踩到 —— 正确写法是
+      //   const opts = {...}; opts.signal = AbortSignal.timeout(12000); await fetch(url, opts)
+      // 信号绑在 fetch **上面两行**，而原来只往下看 13 行 → 好代码被判成"无超时"。
+      // 往前看 6 行：足够覆盖"先备好参数再发起"的常规写法，又不至于把隔壁函数的 signal 借过来。
+      const zone = lines.slice(Math.max(0, i - 6), i + 13).join('\n')
+      // fetch(...)
+      if (/(?<![.\w$])fetch\s*\(/.test(l)) {
+        if (!/signal\s*:|AbortSignal|timeout/.test(zone)) {
+          push('fetch 无超时', `${rel(f)}:${i + 1}`, 'fetch 没有 signal/timeout —— 网络卡住时这个请求会永久挂起')
+        }
+      }
+      // 独立的 spawnSync / execFileSync（不是 a.exec(...) / /re/.exec(...)）
+      if (/(?<![.\w$])(?:spawnSync|execFileSync)\s*\(/.test(l)) {
+        if (/\/.*\/\.exec\(/.test(l)) return      // 正则字面量里的 exec
+        if (!/timeout/.test(zone)) {
+          push('同步子进程无超时', `${rel(f)}:${i + 1}`, 'spawnSync/execFileSync 没有 timeout —— 子进程挂住会把整个 Node 进程钉死')
+        }
+      }
+    })
+  }
+}
+
+// ── 11. 裸 JSON.parse（能把主进程炸掉，v5 深度排查）──────────────────────
+// 实测：往面板 API POST 一个畸形 body，`JSON.parse(await readBody(req))` 抛的异常
+// 在 async 路由里没人 catch → unhandledRejection → DSH `fatal uncaught exception` 退出。
+// 规则：读**请求体/外部输入**的 JSON.parse 必须在 try 里，或走 safeBody()。
+// 读自己刚写的文件的 parse 不算（那种失败有 fallback 语义）。
+function checkBareJsonParse(files) {
+  for (const f of files) {
+    // 一次性运维脚本 / 测试 / 门禁自己：崩了只是那个命令失败，不会影响常驻服务
+    if (/\/(test|scripts)\//.test(f) || /tools\/(drill-|tidy-|trim-|restore-|reset-|fix-|probe)/.test(f)) continue
+    const lines = stripComments(fs.readFileSync(f, 'utf8')).split('\n')
+    lines.forEach((l, i) => {
+      if (!/JSON\.parse\s*\(/.test(l)) return
+      // 只关心"解析外部输入"的场景
+      if (!/(readBody|req\.|body|resp|raw|txt\.slice|String\(r\)|payload)/.test(l)) return
+      const win = lines.slice(Math.max(0, i - 6), i + 1).join('\n')
+      if (/try\s*\{|safeBody|\?\.|\.catch\(/.test(win)) return
+      push('裸 JSON.parse', `${rel(f)}:${i + 1}`, '解析外部输入没有 try/catch —— 畸形输入会抛到 async 顶层，可能崩掉主进程')
+    })
+  }
+}
+
+// ── 12. 多进程状态文件必须走 atomic（v5 深度排查）───────────────────────
+// 实测：无锁 read-modify-write，20 进程并发丢 28.8%。
+// 额度账本漏记 = 她超额发评论/点赞 = 平台风控；情绪值丢 = 行为漂移。
+// 规则：写这些"多写入者"的状态文件时，必须用 atomic 的 updateJson（或显式加锁）。
+// ── 6.5 状态文件必须原子写（v5 深度排查 + 2026-11-02 升级） ──────────────────
+//
+// 老版本的做法：在源码行文本里找 MULTI_WRITER 列表里的**文件名字面量**。
+// 2026-11-02 审查发现它漏检了 tools/lib/proactive-gate.mjs：
+//
+//     const GATE = () => dataPath('qq-proactive-gate.json')   // 文件名在这
+//     fs.writeFileSync(f, JSON.stringify(o, null, 1))          // 裸写只写了变量 f
+//
+// → 门禁全绿，但那张闸门账是三条主动通道跨进程共用的唯一节流依据。
+//   实测：旧写法 3 进程 × 20 次自增，计数从 61 掉到 5（丢失 193%，不只是丢增量，
+//   发生了**回退**）。这就是"门禁全绿 ≠ 覆盖完全"。
+//
+// 新版本改成**同文件内符号追踪**：
+//   ① 找出本文件里所有"多写者文件名"出现的位置；
+//   ② 把这些文件名绑定的**标识符名**收集起来（字面量所在行的 `const X =` / 赋值目标，
+//      以及 const F = () => dataPath('x.json') 这类函数名）；
+//   ③ 任何 writeFileSync 的第一个参数只要由这些标识符**构成**（直接、或包在函数调用里
+//      如 GATE()、String(F)、path.join(F)、`${F}`），且往前 12 行没有 atomic 调用 → 报错。
+// 仍然处理不了：跨文件别名、动态拼接后完全不可追溯的名字（记 warning，不阻断）。
+const MULTI_WRITER = [
+  'quota.json', 'bili-actions.json', 'share-queue.json', 'mood.json',
+  'lore.json', 'promises.json', 'sent-at.json', 'sent-log.json',
+  'qq-proactive-gate.json', 'sleep-state.json',
+  'focus.json', 'replies-state.json', 'status.json', 'mind-plan.json',
+  'skipped-messages.json', 'qq/episodes.jsonl', 'episodes.jsonl',
+  'llm-collateral.json',
+  'immune.json',
+  'wounds.json',
+  'metabolism.json',
+  // 2026-11-04：出站队列与跨窗口去重表。前者被 qq-server 的非 QQ 分支写、
+  // 被 /outbound 的拉取端读（多写者）；后者被每个发消息的进程读-改-写。
+  'outbox.json',
+  'send-dedup.json',
+]
+
+/** 把 arguments 里出现的标识符名抠出来（去掉字符串字面量与数字）。 */
+function identsOf(arg) {
+  const noStr = arg.replace(/'[^']*'|"[^"]*"|`[^`]*`/g, ' ')
+  return (noStr.match(/[A-Za-z_$][\w$]*/g) || [])
+}
+
+function checkAtomicWrites(files) {
+  for (const f of files) {
+    // 测试要在"没有锁"的前提下验证旧行为；一次性脚本只跑一次，不参与并发
+    if (/\/(test|scripts)\//.test(f) || /tools\/(drill-|tidy-|trim-|restore-|reset-|fix-|probe)/.test(f)) continue
+    // atomic.mjs 自己是锁的实现
+    if (/tools\/lib\/atomic\.mjs$/.test(f)) continue
+    const src = stripComments(fs.readFileSync(f, 'utf8'))
+    const lines = src.split('\n')
+
+    // ① 哪些文件名出现在本文件里
+    const hitNames = MULTI_WRITER.filter((n) => src.includes(n))
+    if (!hitNames.length) continue
+
+    // ② 把文件名绑定的标识符收集起来
+    const guarded = new Set()
+    for (const name of hitNames) {
+      lines.forEach((l) => {
+        if (!l.includes(name)) return
+        // const X = ...   /  let X = ...  /  X = ...
+        const m = l.match(/(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=/)
+        if (m) guarded.add(m[1])
+        // const F = () => ... / const f = function () {...
+        const fn = l.match(/(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:\(|\bfunction\b)/)
+        if (fn) guarded.add(fn[1])
+        // 直接赋值：  this.gate = ...   /  obj.F = ...
+        const as = l.match(/^\s*(?:this\.)?([A-Za-z_$][\w$]*)\s*=\s*[^=]/)
+        if (as) guarded.add(as[1])
+      })
+    }
+    // 常见的「文件名直接内联在 writeFileSync 第一个参数」也要算
+    for (const name of hitNames) guarded.add("'" + name + "'")
+
+    // ③ 查每一种裸写
+    lines.forEach((l, i) => {
+      if (!/writeFileSync\s*\(|appendFileSync\s*\(/.test(l)) return
+      const args = l.slice(l.indexOf('(') + 1)
+      // 去掉嵌套括号里更深的结构，只取到匹配的右括号（简化：取到最后一个 )）
+      const first = args.split(',')[0] || ''
+      const ids = identsOf(first)
+      // 直接内联文件名
+      const inline = hitNames.some((n) => first.includes("'" + n + "'") || first.includes('"' + n + '"'))
+      const viaId = ids.some((id) => guarded.has(id))
+      if (!inline && !viaId) return
+      // 往前 12 行有 atomic 调用就放行（updateJson 内部自己会写）
+      const win = lines.slice(Math.max(0, i - 12), i + 1).join('\n')
+      if (/updateJson|withFileLock|acquireLock|writeJsonAtomic/.test(win)) return
+      const why = inline ? '文件名直接内联' : '经由标识符 ' + ids.filter((x) => guarded.has(x)).join('/')
+      push('多进程状态文件裸写', `${rel(f)}:${i + 1}`,
+        `多写者状态文件必须走 atomic.updateJson（实测无锁并发丢 28.8%，3进程×20次实测计数回退）—— ${why}`)
+    })
+  }
+}
+
+// ── 6.6 import 方向（2026-11-02 新增，第 13 条）──────────────────────────────
+//
+// 层序（单向）：lib/  →  tools/lib/  →  tools/brain/ / tools/commands/
+// 反向不是"绝对不能有"，但**出现一次就要显式记账**，否则分层图会慢慢失真。
+// 目前允许的反向只有一条：tools/lib/*.mjs → ../brain/*（记忆/人设/通知都要读脑，
+// 有 8 条，且都在函数体内调用，不构成模块级环）。其余方向一律判红。
+//
+// 用 Tarjan 跑不出真环（2026-11-02 实测：SCC 全为单点），说明现在没有模块级循环；
+// 但"没有环"不等于"分层干净"，所以这条检查盯的是**方向**而不是环。
+const ALLOWED_REVERSE = [
+  'tools/lib/brain-bridge.mjs',      // remember 双写 brain（桥就是它的职责）
+  'tools/lib/dream-read.mjs',        // 读梦境 jsonl，只借 brain/json 的读取器
+  'tools/lib/notify.mjs',            // 通知发出后要写 delivery 账（交付证据）
+  'tools/lib/persona.mjs',           // 提示词装配要用脑的七路召回
+  'tools/lib/promise-executor.mjs',  // 承诺兑现要落 intents
+  'tools/lib/promises.mjs',          // 同上
+  'tools/lib/body.mjs',              // 身体：把心跳的决定接到能力上。它要看自我的心跳/睡眠/节律，
+                                     // 才知道"此刻该做什么"—— 判断权在脑，执行接线在 lib，
+                                     // 这个方向是刻意的（脑不该认识 socket，body 不该做决定）。
+  'tools/lib/think.mjs',             // 「先想后说」的执行体：要读身体状态（field）和心里的念头（inner）
+                                     // 才能决定她此刻会怎么想。它是 lib 层里唯一必须看脑的地方 ——
+                                     // 因为"怎么想"本身就是脑的职责，而它只是个执行器。
+  'tools/lib/reply-gate.mjs',        // 函数体内动态 import：判完接话时机顺手把情绪写进 affect，
+                                     // 省掉「回复完再单独调一次判情绪」那次 LLM 往返
+  'tools/lib/bond.mjs',              // 关系器官的慢相结算要看她的睡眠节律（REM 门控）：
+                                     // "睡一觉就想通了"是字面机制。判断权（何时算睡）在脑，
+                                     // 器官本身在 lib —— 与 body.mjs 同一个方向的先例。
+  'tools/lib/self-context.mjs',      // 自我语境合成（2026-11-07）：把账本（selfcon）与她真说过的句子（anchor）
+                                     // 合成一段 system。只读不写；合成发生在装配层，数据与判断在脑 ——
+                                     // 与 persona.mjs 同形（装配要读脑的召回）。
+  'tools/lib/cohere-bridge.mjs',     // 连贯性器官的编排接线（2026-11-07）：器官在 brain/cohere，
+                                     // 桥在 lib —— 与 think.mjs 同形（"怎么想"归脑，执行接线归 lib）。
+                                     // 它只做参数整理与错误隔离，不做任何业务判断。
+  'tools/lib/sensory-gain.mjs',      // 感觉增益（2026-11-07）：把器官读数（field 情绪场 / metabolism 能量）
+                                     // 翻译成视听采样参数（看几帧、看多密、听多久）。读数源在脑、
+                                     // 翻译在 lib —— 与 body.mjs 同方向：判断在脑，执行接线在 lib。
+]
+
+// brain → commands 的反向依赖白名单（2026-11-07 补机制）。
+// 现状里确实有一类**合理的**反向：脑的周期动作要触发一个命令（自检/结账），
+// 判断权在命令、触发在脑。以前这类只能硬报红，久了就没人看了 —— 白名单比红更有用。
+const ALLOWED_BRAIN_TO_CMD = {
+  'tools/brain/organ/heartbeat.mjs': '心跳每 40 拍触发一次全仓自检（paincheck 命令，动态 import）。'
+    + '触发时机是脑的职责（它知道节拍），自检本身是命令（它知道怎么查）；'
+    + '与"命令是调用方"不冲突 —— 这里命令是被调用的服务，不是编排。',
+}
+
+// A3b 文件对双向依赖（2026-11-03）：a→b 与 b→a 同时静态 import = 环对。
+// 背景：M55 挂账 persona.mjs ↔ brain/assemble.mjs —— persona 静态 import recall，
+// assemble 静态 import persona。ESM 靠"函数体内才调用"活着，但依赖图已经成环，
+// 任何一边改成模块级求值（如顶层缓存）就是启动炸雷。规则：静态成环 = 红；
+// 确需互相引用时把一边改成函数体内动态 import（见 ALLOWED_REVERSE 的既有先例口径）。
+const MUTUAL_PAIRS = [
+  // '相对路径对1|相对路径对2': '豁免理由',
+]
+function checkMutualPairs(files) {
+  const norm = (f) => { const r = String(f).replaceAll('\\', '/'); return r.startsWith(ROOT + '/') ? r.slice(ROOT.length + 1) : r }
+  const edges = new Map()   // from -> Set(to)（只算 .mjs/.js 源文件间的静态 import）
+  for (const f of files) {
+    const rel = norm(f)
+    if (!/\.mjs$|\.js$/.test(rel)) continue
+    const src2 = stripComments(fs.readFileSync(f, 'utf8'))
+    const re = /import\s+(?:[\w$*{},\s]+\s+from\s+)?['"]([^'"]+)['"]/g
+    let m2
+    while ((m2 = re.exec(src2))) {
+      const spec = m2[1]
+      if (!spec.startsWith('.') && !spec.startsWith('/')) continue
+      const base = path.resolve(path.dirname(f), spec)
+      for (const ext of ['.mjs', '.js', '', '/index.mjs', '/index.js']) {
+        try { if (fs.statSync(base + ext).isFile()) { edges.set(rel, (edges.get(rel) || new Set()).add(norm(base + ext))); break } } catch { /* next extension candidate */ }
+      }
+    }
+  }
+  const seenPair = new Set()
+  for (const [a, tos] of edges) {
+    for (const b of tos) {
+      if (!(edges.get(b) || new Set()).has(a)) continue
+      const k = [a, b].sort().join(' <-> ')
+      if (seenPair.has(k)) continue
+      seenPair.add(k)
+      if (MUTUAL_PAIRS[k]) { notes.push('双向依赖（豁免）：' + k + ' —— ' + MUTUAL_PAIRS[k]); continue }
+      problems.push({ kind: '双向依赖', file: a, detail: k + '\n      静态 import 成环对。把其中一边改成函数体内动态 import，或在 MUTUAL_PAIRS 登记豁免理由。' })
+    }
+  }
+  if (seenPair.size) notes.push('文件对双向检查：' + seenPair.size + ' 对静态成环（豁免 ' + [...seenPair].filter((k) => MUTUAL_PAIRS[k]).length + ' 对）')
+}
+
+// A3 髓鞘化（2026-11-03）：演化函数收尾必须 persist。
+// 背景：M84 抓到 hpa.evolve() 从不落盘 ——「有值、不报错、判定正常、数据全假」
+// 家族第 5 例。演化了却不落盘 = 每次读都从同一文件态重新演化，曲线全是假的。
+// 状态型（读文件算出状态写回去）的 evolve 必须以 persist 收尾；
+// 纯函数型（输入->输出，无文件态）在 EVOLVE_PERSIST_EXEMPT 登记，不拦新增。
+const EVOLVE_PERSIST_FILES = ['tools/brain/organ/hpa.mjs', 'tools/brain/field.mjs']
+const EVOLVE_PERSIST_EXEMPT = {
+  'tools/brain/micro/receptor.mjs': '纯函数：evolve(r,...) 改传入的受体对象，何时落盘由调用方（neuron.tick/测试）决定',
+  // 2026-11-07：与 receptor 同形状 —— evolve(st, now) 只按 dt 推进传入的状态并返回；
+  // 落盘发生在 signal.pulse() 的 mutateJson 临界区里（那里是唯一写入点）。
+  // 让 evolve 自己写盘会在同一轮里覆盖 pulse 刚加的脉冲（读-改-写竞态）。
+  'tools/brain/cohere/signal.mjs': '纯函数：evolve(st, now) 返回推进后的状态，落盘由 pulse() 在锁内唯一负责',
+}
+function checkEvolvePersist(files) {
+  const hit = new Set(
+    files
+      .map((f) => String(f).replaceAll('\\', '/'))
+      .filter((f) => /(^|\/)tools\/brain\//.test(f) && /\bmjs$/.test(f))
+      .filter((f) => /\bevolve\s*\(/.test(stripComments(fs.readFileSync(f, 'utf8')))),
+  )
+  for (const f of hit) {
+    // 用全局 rel() 而不是手写 startsWith(ROOT + '/')：Windows 上 ROOT 是反斜杠，
+    // 手写版本永远匹配不上，整张豁免表（含 receptor）在这台机器上等于不存在。
+    const r = rel(f).replaceAll('\\', '/')
+    if (EVOLVE_PERSIST_FILES.includes(r) || EVOLVE_PERSIST_EXEMPT[r]) continue
+    const lines = stripComments(fs.readFileSync(f, 'utf8')).split('\n')
+    let inFn = false
+    let brace = 0
+    let sig = ''
+    for (let i = 0; i < lines.length; i++) {
+      const L = lines[i]
+      if (!inFn && /\bevolve\s*\(/.test(L) && /\{\s*$/.test(L)) { inFn = true; brace = (L.match(/\{/g) || []).length - (L.match(/\}/g) || []).length; sig = (i + 1) + ': ' + L.trim().slice(0, 80); continue }
+      if (!inFn) continue
+      brace += (L.match(/\{/g) || []).length - (L.match(/\}/g) || []).length
+      if (/\bpersist\s*\(/.test(L)) { inFn = false; continue }
+      if (brace <= 0 && /\}/.test(L)) { problems.push({ kind: 'evolve-不落盘', file: f, detail: sig + '\n      演化函数体内没有 persist(...) —— 有值不落盘 = 假活（M84 家族）。状态型请以 persist 收尾；纯函数型在 EVOLVE_PERSIST_EXEMPT 登记理由。' }); inFn = false }
+    }
+  }
+  if (hit.size) notes.push('髓鞘化：' + hit.size + ' 个含 evolve 的脑文件已检查 persist 收尾')
+}
+function checkImportDirections(files) {
+  for (const f of files) {
+    const r = rel(f)
+    const src = stripComments(fs.readFileSync(f, 'utf8'))
+    const specs = [...src.matchAll(/(?:from\s*|import\s*\(\s*)['"]([^'"]+)['"]/g)].map((m) => m[1])
+    for (const sp of specs) {
+      if (!sp.startsWith('.')) continue
+      const target = path.resolve(path.dirname(f), sp)
+      const rt = rel(target)
+      // lib/ 不许 import tools/commands 或 tools/brain
+      if (/^lib\//.test(r) && /^tools\/(commands|brain)\//.test(rt)) {
+        push('分层反向依赖', `${r} → ${rt}`, 'lib/ 是插件壳，不应依赖编排层或脑层')
+      }
+      // tools/brain 与 tools/commands 互不依赖
+      if (/^tools\/brain\//.test(r) && /^tools\/commands\//.test(rt) && !ALLOWED_BRAIN_TO_CMD[r]) {
+        push('分层反向依赖', `${r} → ${rt}`, '脑层不应依赖编排层（命令是调用方，不是被调方）')
+      }
+      // tools/lib → tools/brain 在白名单外要报
+      if (/^tools\/lib\//.test(r) && /^tools\/brain\//.test(rt) && !ALLOWED_REVERSE.includes(r)) {
+        push('分层反向依赖', `${r} → ${rt}`, '新增的 tlib→brain 反向依赖需要显式加进 check.mjs 的 ALLOWED_REVERSE 并写明理由')
+      }
+    }
+  }
+}
+
+// ── 7. Windows 硬编码路径（10-31）───────────────────────────────────────────
+// 生产代码里出现 D:/ 或 C:\ 就是 ENOENT，而且是静默的（被 catch 吞掉）。
+// 允许清单：外部程序路径候选（用户可配）与纯提示文案。
+// ── 旧命名回流（2026-11-07）──────────────────────────────────────────
+// 网关一直是 SnowLuma；那个旧名字只是历史配置键。旧名散落会**误导排障**：
+// 实测启动日志写 `xxx_http: MISSING` 时，人会去查一个根本没装的网关。
+// 允许出现旧名的只有两处兼容层；其他运行时代码再写 → 红。
+// 规则自身的匹配串用拼接构造，避免门禁把自己也报成违规。
+const LEGACY_GW_ALLOW = new Set([
+  'tools/lib/qq-gateway.mjs',    // 迁移表 + 读旧键
+  'lib/legacy-qq-keys.mjs',      // 壳层读旧键（lib 不能 import tools）
+])
+const LEGACY_GW_RE = new RegExp('nap' + 'cat', 'i')
+function checkLegacyGatewayNames(files) {
+  for (const f of files) {
+    const r = rel(f).replaceAll('\\', '/')
+    if (LEGACY_GW_ALLOW.has(r)) continue
+    if (/^test\//.test(r) || /^scripts\//.test(r)) continue   // 测试/诊断脚本可以构造旧配置
+    if (/\.(md|json|jsonl|ya?ml)$/.test(r)) continue          // 文档/配置说明属于正常
+    let src = ''
+    try { src = fs.readFileSync(f, 'utf8') } catch { continue }
+    if (LEGACY_GW_RE.test(src)) {
+      push('旧命名回流', r, '网关是 SnowLuma；旧键名只允许出现在 qq-gateway / legacy-qq-keys 的兼容层')
+    }
+  }
+}
+
+function checkHardcodedPaths(files) {
+  // 什么算"真问题"：Windows 路径被**无条件**使用（Linux 上必然 ENOENT）。
+  // 什么不算：① 探测式兜底 existsSync('C:/…') ? 'C:/…' : 'curl'（跨平台正确写法）
+  //          ② config().x || 'D:/…'（用户可覆盖的默认值）
+  //          ③ 纯提示文案 / 外部程序安装路径候选
+  const ALLOW = new Set([
+    'tools/lib/config.mjs',        // DEFAULTS（用户可覆盖）
+    'tools/commands/voice.mjs',    // RVC/SoVITS 安装路径提示
+    'tools/commands/selftest.mjs', // 体检文案
+    'tools/lib/rvc.mjs',
+    'tools/lib/refclean.mjs',
+    'tools/lib/cover.mjs',         // 外部程序（ffmpeg/rvc）路径候选
+    'tools/lib/sing.mjs',
+    'tools/lib/bili-write.mjs',
+    'tools/commands/qq-server.mjs',// snowluma_launcher 兜底 + curl.exe 探测
+    'tools/lib/ledger.mjs',
+  ])
+  const re = /['"\x60]([A-Za-z]:[\\/][^'"\x60\n]{3,})['"\x60]/g
+  for (const f of files) {
+    const r = rel(f)
+    if (ALLOW.has(r)) continue
+    const lines = fs.readFileSync(f, 'utf8').split('\n')
+    lines.forEach((line, i) => {
+      if (/^\s*(\/\/|\*|#)/.test(line)) return          // 注释
+      // 探测式兜底 / 可覆盖默认值：同一行里有 existsSync 或 || 就不算硬编码
+      // 候选列表（同一行有逗号/方括号 = 数组元素）、测试夹具、探测式兜底，都不算硬编码
+      // 平台守卫：`process.platform === 'win32' ? 'D:/x' : '/opt/x'` 不是硬编码，
+      // 是跨平台默认值。旧版只看字符串字面量，把这类**正确写法**也报成 ENOENT 风险 ——
+      // 误报多了，真问题就没人看了（项目自己在 entry.sh 那次教训里写过同一句话）。
+      if (/process\.platform/.test(line)) return
+      if (/existsSync|\|\||\[|,/.test(line)) return
+      if (/^test[\\/]/.test(r)) return
+      let m
+      re.lastIndex = 0
+      while ((m = re.exec(line)) !== null) {
+        push('Windows 硬编码路径', r + ':' + (i + 1), "'" + m[1] + "' —— Linux 上必然 ENOENT")
+      }
+    })
+  }
+}
+
+// ── 8. 规模护栏（10-31）───────────────────────────────────────────────────
+// 上帝文件不是"风格问题"：qq-server.mjs 1710 行时，改一行要在 400 行上下文里找落点，
+// 这是 lib/index.js 曾被打散成单字符那类事故的温床。
+// 阈值定在"现状 + 余量"，只拦**继续变大**，不要求一次重构完。
+//   · 单文件 > 1800 行          —— 必须拆了再加功能
+//   · 单个函数 > 500 行         —— 必须拆函数
+// 例外清单写在这里，是"已知欠账"，不是"允许无限长"。
+const FILE_LIMIT = 1800
+const FUNC_LIMIT = 500
+const FILE_ALLOW = {
+  // 已知欠账：闭包耦合太深，拆分风险 > 收益（见 docs/audit-fix-2026-10-31.md 第八节）
+  'tools/commands/qq-server.mjs': 1765,   // 2026-11-08 她自主加了「看视频可被他插话打断」的 AbortController 接线（+15 行）。
+                                          // 拆这个文件的正确做法是把 prepareInbound 的媒体链路整段抽成模块，属独立一轮；
+                                          // 先按实际行数登记，别让既有功能挡住门禁。
+  // 2026-11-07：全量门禁（不用快速模式）扫描发现它已经 1221 行 —— 既有欠账，
+  // 与本次改动无关。按当前值登记，别让它挡住别的改动；拆它属独立一轮
+  // （lib/index.js 是 DSH 插件壳，改动要对着上游 diff 走）。
+  'lib/index.js': 1230,
+  'client.js': 1150,
+}
+// 函数级例外：这些是"主闭包"（把所有子功能装进同一个作用域），
+// 拆它们的正确做法是抽出可独立测试的纯逻辑（已完成：onebot.mjs），
+// 剩下的闭包内部函数彼此共享 send/callApi/config，强拆只会制造更多参数传递。
+// 2026-11-02：client.js 被纳入扫描后暴露的真欠账。
+// BotSection() 878 行 —— 它不是"没拆"，而是**树直接吃状态**：return 里 setDraft 出现 44 次、
+// setBusy 14 次，把树抽成纯组件的代价是要把 15 个 setter 逐个往下传，比现在更差。
+// 正确的做法是引入 reducer（draft 22 处直接改）或拆成多个自洽的子面板 —— 那是独立一轮重构。
+// 先登记，别让它挡住门禁；门禁的价值是"新账不许再欠"，不是"旧账一天还完"。
+const FUNC_ALLOW = {
+  'client.js:BotSection': 900,
+  // 2026-11-04：她在语气层后面补了 7 行「你发得出语音」的能力说明（实测用户要语音时她答
+  // "我只能打字"——能力不认识等于白装）。buildMessages 因此 502 行。
+  // 正确拆法是把整个"语气/能力层"抽成 buildVoiceCapabilityLayer(cfg, platform, isGroup)，
+  // 但那段依赖 cfg 与 emotionTagPrompt 的闭包，属独立一轮；先登记，别挡门禁。
+  // 2026-11-04 傍晚：这个函数在她自己跑 selfmod 之后涨到 595 行（新增了 histAge /
+  // 「上次断在哪」索引块等），与插件壳的改动无关。额度按当前实际值登记，理由同上：
+  // 拆它需要把语气/能力层与 cue 层分别抽出，属独立一轮；先别让它挡住别的改动。
+  // 2026-11-07：连贯性器官接线（cohere 提示块 + cue 改 system + 历史清洗）后 656 行。
+  // 额度按当前实际值登记，理由同前：拆它要把"记忆层/状态层/语气层/线索层"四段
+  // 分别抽成独立函数，属独立一轮；先别让它挡住别的改动。
+  'tools/lib/persona.mjs:buildMessages': 680,
+  // qq-server 的 run() 是主闭包 —— 它的长度 ≈ 文件长度，文件护栏已经覆盖。
+  // 10-31 从 1600 调到 1700：为了治"一小时内连发 6 条主动消息"，在闭包里加了
+  // 主动发言闸门（ownerSpoke / canSpeak / spokeDone 三个 helper 在模块级，
+  // 闭包里只剩调用）。文件护栏（1750）仍然管着总长度，这里只是同步放宽。
+  'tools/commands/qq-server.mjs:run': 1700,
+  // lib/index.js 的 apply() 是插件壳主闭包，同理
+  'lib/index.js:apply': 1100,
+}
+// ── 16. 导出了但没有任何调用者的函数（2026-11-03 P0-3）───────────────────────
+// 为什么加：presence.mjs 在库里躺了整整一天——文件在、测试在、门禁全绿，
+// 但全仓没有任何一处 import 它（M60：引用为零）。器官写完了没人接线，
+// 静态上完全看得出来：export 了名字 X，而 X 在其它文件里一次都没出现。
+// 这类「入库未接线」必须在门禁里现形，而不是等评审。
+// 规则：扫 export function/const/class 的名字，在**其它文件**里找词级引用。
+//   · 引用包括 import、动态调度表里的名字、测试里的调用（测试也算调用者，
+//     但「只有测试用」的器官同样是欠账，会在报告里注出来）；
+//   · 入口文件（lib/index.js / client.js / scripts/）被宿主或浏览器直接加载，
+//     走 SKIP，不参与本条；
+//   · 例外登记 ZERO_CALL_ALLOW，写理由——是已知欠账，不是永久豁免。
+const ZERO_CALL_SKIP_FILES = new Set(['lib/index.js', 'client.js', 'tools/lib/_demo.mjs'])
+const ZERO_CALL_ALLOW = {
+  // 'tools/xxx.mjs:fnName': 'reason (ticket)'
+}
+// 2026-11-03 高压修缮：读她的自改提案（selfmod.json，env 链与 paths.mjs 同口径）。
+// 用途：新建文件（create:true）在"还没接线"的窗口期，导出必然全仓 0 引用 ——
+// 这条死路以前逼得她只能直写盘绕过备份/门禁链（presence.mjs 就这么进的库）。
+// 口径：新文件只在 lib/ 下 + 存在同路径的未作废 create 提案时，"新文件导出零调用"
+// 降级为提示；豁免只认提案在案的文件，不外溢到旧代码。
+function selfmodCreatesSet() {
+  try {
+    const home = process.env.BOT_DATA_DIR || process.env.USERPROFILE || process.env.HOME || ''
+    if (!home) return new Set()
+    const j = JSON.parse(fs.readFileSync(path.join(home, 'selfmod.json'), 'utf8'))
+    const set = new Set()
+    for (const it of [...(j.pending || []), ...(j.history || [])]) {
+      if (it && it.create === true && typeof it.file === 'string'
+          && it.state !== 'rejected' && it.state !== 'rolledback') set.add(it.file)
+    }
+    return set
+  } catch { return new Set() }
+}
+
+// ── C 系门禁（2026-11-03 R3）────────────────────────────────────────────
+// 规则一：脑层新器官文件必带「现象：」注释头（M58 口径：现象→机制→器官→…）。
+// 说不出自己解释什么现象的文件是配线，不是器官 —— 配线应该进既有文件，不该开新档。
+// 豁免：micro/（受体/突触是既有器官的部件）、paths/json/工具性文件。
+function checkOrganPhenomenonHeader(files) {
+  const isOrganFile = (rel) => /^tools\/brain\/.*\.mjs$/.test(rel)
+      && !/^tools\/brain\/(micro|cell)\//.test(rel)
+      && !/(paths|json|schema|metrics|clock|swallow|store|working|index-inv|index|event|taskqueue)\.mjs$/.test(rel)
+  let hit = 0
+  for (const f of files) {
+    const rel = String(f).replaceAll('\\', '/')
+    if (!isOrganFile(rel)) continue
+    hit++
+    const src = fs.readFileSync(f, 'utf8')
+    const head = src.slice(0, 2500)
+    if (!/现象/.test(head)) push('器官缺现象头', rel, 'tools/brain/ 下的器官文件开头 2500 字内必须写清它要解释的「现象」（M58 口径）。说不出现象的文件是配线，不是器官。')
+  }
+  if (hit) notes.push('C 系门禁：' + hit + ' 个脑层器官文件检查现象头')
+}
+
+// 规则二：bond.safety() 纯读纪律。C1 的正确性依赖它只读 —— 函数体里出现
+// 任何账本写调用（mutate/update/append/poke/setDim/drift/save）都是红灯。
+function checkSafetyPureRead(files) {
+  const f = files.find((x) => String(x).replaceAll('\\', '/').endsWith('tools/lib/bond.mjs'))
+  if (!f) return
+  const src = stripComments(fs.readFileSync(f, 'utf8'))
+  // 注意不能用 [^)]* 匹配参数：默认参数里有 Date.now()，内部的 ) 会截断匹配。
+  const decl = src.indexOf('export function safety(')
+  if (decl < 0) { push('safety 纯读', 'tools/lib/bond.mjs', '找不到 safety() —— C1 社交安抚缓冲的纯读口丢了或改名了'); return }
+  const open = src.indexOf('{', decl)
+  if (open < 0) { push('safety 纯读', 'tools/lib/bond.mjs', 'safety() 声明异常：找不到函数体开括号'); return }
+  let depth = 1, i = open + 1
+  while (i < src.length && depth > 0) { const c = src[i]; if (c === '{') depth++; else if (c === '}') depth--; i++ }
+  const body = src.slice(open + 1, i)
+  const writer = /\b(mutateJson|updateJson|appendJsonl|poke|setDim|driftSet|save|mutatePerson)\s*\(/.exec(body)
+  if (writer) push('safety 纯读', 'tools/lib/bond.mjs', `safety() 函数体内出现写调用 ${writer[1]} —— 社交安抚缓冲必须保持纯读（hpa.stress 在热路径上读它，写账本会锁住级联）`)
+  else notes.push('C 系门禁：bond.safety() 纯读纪律核查通过')
+}
+
+function checkZeroCallers(files) {
+  const corpus = []
+  for (const f of files) {
+    const r = rel(f)
+    if (r.startsWith('scripts/')) continue
+    let src
+    try { src = fs.readFileSync(f, 'utf8') } catch (e) { continue }
+    corpus.push({ r, s: stripComments(src) })
+  }
+  const createdFiles = selfmodCreatesSet()
+  const names = new Map()
+  for (const c of corpus) {
+    if (ZERO_CALL_SKIP_FILES.has(c.r)) continue
+    const re = /(?:^|\n)\s*export\s+(?:async\s+)?(?:function|const|class)\s+([A-Za-z_$][\w$]*)/g
+    let m
+    while ((m = re.exec(c.s)) !== null) {
+      const n = m[1]
+      if (!names.has(n)) names.set(n, { file: c.r, testsOnly: true })
+    }
+  }
+  const wordOf = (n) => new RegExp('(?<![\\w$])' + n + '(?![\\w$])', 'g')
+  for (const [n, info] of names) {
+    if (ZERO_CALL_ALLOW[info.file + ':' + n]) continue
+    const word = wordOf(n)
+    let uses = 0
+    for (const c of corpus) {
+      let cnt = 0
+      let mm
+      while ((mm = word.exec(c.s)) !== null) cnt++
+      const decl = (c.s.match(new RegExp('export\s+(?:async\s+)?(?:function|const|class)\s+' + n + '(?![\w$])', 'g')) || []).length
+      cnt = Math.max(0, cnt - decl)
+      if (cnt > 0) { uses += cnt; if (!c.r.startsWith('test/')) info.testsOnly = false }
+    }
+    if (uses === 0) {
+      if (createdFiles.has(info.file) && /^lib\//.test(info.file)) {
+        notes.push(`新建文件待接线（selfmod --new 提案在案，接线后此提示消失）：${info.file} ${n}()`)
+      } else {
+        push('导出零调用', info.file, n + '() 全仓 0 处引用（含自身） —— 入库未接线?')
+      }
+    } else if (info.testsOnly) {
+      // 2026-11-03 晚新增（假活家族第 6 例教训）：metabolism.spend 只有测试在调，
+      // 引用语料把 test/ 也算数 → "测试活着"骗过了"活着"。生产零引用是器官假活的高危信号。
+      // 先做成提示不判红：存量里有一批「导出纯为可测」的合法情况，直接红会把门禁变成噪音源。
+      notes.push('仅测试调用（生产 0 引用，假活高危）：' + info.file + ' ' + n + '()')
+    }
+  }
+}
+
+// ── 7.5 host-user hardcode (2026-11-03) ──
+// Why: bili-audio.mjs had 4 of these. Host user paths break silently on
+// machine/user change or container rebuild. Derive from os.homedir()/env.
+// Rule: non-comment lines must not contain /home/dsh/ or /home/baka/
+// literals. existsSync probes are exempt (they fail safe by design);
+// plain string literals and ||-defaults are not (they mask silently).
+function checkHomeHardcode(files) {
+  const re = /\/home\/(feiyu|baka)\//
+  for (const f of files) {
+    const r = rel(f)
+    const lines = fs.readFileSync(f, 'utf8').split('\n')
+    lines.forEach((line, i) => {
+      if (/^\s*(\/\/|\*|#)/.test(line)) return   // comments are documentation
+      if (line.includes('existsSync(')) return   // probe = fails safe
+      if (re.test(line)) push('宿主用户硬编码', r + ':' + (i + 1), '用 os.homedir()/env 派生，别写死宿主用户路径')
+    })
+  }
+}
+
+function checkSize(files) {
+  for (const f of files) {
+    const r = rel(f)
+    const src = fs.readFileSync(f, 'utf8')
+    const lines = src.split('\n').length
+    const limit = FILE_ALLOW[r.replaceAll('\\', '/')] ?? FILE_LIMIT
+    if (lines > limit) push('文件过大', r, lines + ' 行（上限 ' + limit + '）—— 再加功能前先拆')
+    // 函数级：按"函数声明所在行的缩进"找配对的 }，而不是找第一个 {。
+    // 为什么：以前用 src.indexOf('{', start) —— 如果函数签名换行、或前面有解构默认值，
+    // 会从一个错误的位置开始数括号，把后面几个函数全算进同一个，误报 608 行（实际 95 行）。
+    const re = /^(\s*)(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*\(/gm
+    let m
+    while ((m = re.exec(src)) !== null) {
+      const indent = m[1].length
+      const startLine = src.slice(0, m.index).split('\n').length
+      const lines = src.split('\n')
+      // 从函数首行开始，逐行找"缩进 <= 声明缩进 且以 } 开头"的那一行 = 函数结束
+      let endLine = startLine
+      for (let i = startLine; i < lines.length; i++) {
+        const L = lines[i]
+        if (i > startLine && /^\s*\}/.test(L) && (L.match(/^\s*/)[0].length <= indent)) { endLine = i + 1; break }
+      }
+      const n = endLine - startLine + 1
+      const fkey = r.replaceAll('\\', '/') + ':' + m[2]
+      const flimit = FUNC_ALLOW[fkey] ?? FUNC_LIMIT
+      if (n > flimit) push('函数过大', r + ':' + startLine, m[2] + '() ' + n + ' 行（上限 ' + flimit + '）')
+    }
+  }
+}
+
+// ── 跑 ────────────────────────────────────────────────────────────────────
+// 2026-11-02 审查：client.js（1,080 行，面板 UI 逻辑）原来不在扫描范围 ——
+// walk 只走目录，根目录下的单文件被漏掉了，而 FILE_ALLOW 里却给它留了额度（1,150）。
+// 门禁全绿 ≠ 覆盖完全。现在把根目录的独立源文件补进来，任何新增的 *.js / *.mjs 都会自动被扫到。
+const ROOT_FILES = fs.readdirSync(ROOT).filter((n) => /\.(mjs|cjs|js)$/.test(n)).map((n) => path.join(ROOT, n))
+const files = [...['tools', 'lib', 'test', 'scripts'].flatMap((d) => walk(path.join(ROOT, d))), ...ROOT_FILES]
+checkSyntax(files)
+if (!FAST) {
+  checkSpecifiers(files)
+  checkDataPathPrefix(files)
+  checkLegacyDataDir(files)
+  checkCommandRegistry()
+  checkPerms()
+  checkEmptyCatch(files)
+  checkHardcodedPaths(files)
+  checkLegacyGatewayNames(files)
+  checkHomeHardcode(files)
+  checkSyncThenable(files)
+  checkUndeclaredIdentifiers(files)
+  checkNoTimeout(files)
+  checkBareJsonParse(files)
+  checkAtomicWrites(files)
+  checkImportDirections(files)
+  checkEvolvePersist(files)
+  checkMutualPairs(files)
+  checkRealCycles(files)
+  checkOrganPhenomenonHeader(files)
+  checkSafetyPureRead(files)
+  checkFieldSenses(files)
+  checkSelfmodProtected(files)
+  checkZeroCallers(files)
+  checkSize(files)
+}
+
+const grouped = {}
+for (const p of problems) (grouped[p.kind] ||= []).push(p)
+
+if (!problems.length) {
+  // A2 伤口愈合（2026-11-03）：门禁全绿 = 全身检查通过 —— 开放伤口全部愈合并沉淀瘢痕。
+  try {
+    const w = closeIfHealed(notes.join('；') || '门禁全绿')
+    if (w.closed) notes.push('伤口愈合：' + w.closed + ' 处（沉淀瘢痕 ' + w.scarred + ' 条）')
+  } catch { /* 账本故障不挡门禁本身 */ }
+  console.log(`✅ 门禁通过：${files.length} 个文件${FAST ? '（快速模式）' : ' · 语法/断链/双前缀/注册/权限/catch/路径/同步异步/未声明变量/超时/JSON/原子写/import方向/规模 全绿'}`)
+  for (const n of notes) console.log(`   · ${n}`)
+  process.exit(0)
+}
+
+console.log(`❌ 门禁失败：${problems.length} 个问题（扫了 ${files.length} 个文件）\n`)
+for (const [kind, list] of Object.entries(grouped)) {
+  console.log(`【${kind}】${list.length} 处`)
+  for (const p of list.slice(0, 20)) {
+    console.log(`  ${p.file}`)
+    for (const l of String(p.detail).split('\n')) console.log(`      ${l}`)
+  }
+  if (list.length > 20) console.log(`  … 还有 ${list.length - 20} 处`)
+  console.log('')
+}
+for (const n of notes) console.log(`   · ${n}`)
+process.exit(1)
+
+// ── 模块级环检测（Tarjan SCC，2026-11-03 评审③第 4 条）──────────────────
+// A3b 只抓文件对（a↔b），三元环（a→b→c→a）漏网（注释里自己承认 Tarjan 没实现）。
+// 这里对全部静态 import 边跑 Tarjan：任何 size>1 的强连通分量都是环。
+// 函数体内动态 import 不产生静态边 —— 仓库口径本来就是"用动态 import 断边"。
+// 豁免仍走 MUTUAL_PAIRS（两元键保持 'a <-> b'；多元环键用空格拼接，需要时登记）。
+function checkRealCycles(files) {
+  const norm = (f) => { const r = String(f).replaceAll('\\', '/'); return r.startsWith(ROOT + '/') ? r.slice(ROOT.length + 1) : r }
+  const edges = new Map()
+  for (const f of files) {
+    const rel = norm(f)
+    if (!/\.mjs$|\.js$/.test(rel)) continue
+    let src2 = ''
+    try { src2 = stripComments(fs.readFileSync(f, 'utf8')) } catch { continue }
+    const re = /import\s+(?:[\w$*{},\s]+\s+from\s+)?['"]([^'"]+)['"]/g
+    let m2
+    while ((m2 = re.exec(src2))) {
+      const spec = m2[1]
+      if (!spec.startsWith('.') && !spec.startsWith('/')) continue
+      const base = path.resolve(path.dirname(f), spec)
+      for (const ext of ['.mjs', '.js', '', '/index.mjs', '/index.js']) {
+        try { if (fs.statSync(base + ext).isFile()) { edges.set(rel, (edges.get(rel) || new Set()).add(norm(base + ext))); break } } catch { /* next extension candidate */ }
+      }
+    }
+  }
+  const index = new Map(), low = new Map(), onStack = new Set(), stack = []
+  let counter = 0
+  const sccs = []
+  const strongconnect = (v) => {
+    index.set(v, counter); low.set(v, counter); counter++
+    stack.push(v); onStack.add(v)
+    for (const w of (edges.get(v) || [])) {
+      if (!index.has(w)) { strongconnect(w); low.set(v, Math.min(low.get(v), low.get(w))) }
+      else if (onStack.has(w)) low.set(v, Math.min(low.get(v), index.get(w)))
+    }
+    if (low.get(v) === index.get(v)) {
+      const comp = []
+      for (;;) { const w = stack.pop(); onStack.delete(w); comp.push(w); if (w === v) break }
+      if (comp.length > 1) sccs.push(comp)
+    }
+  }
+  for (const v of edges.keys()) if (!index.has(v)) strongconnect(v)
+  for (const comp of sccs) {
+    const sorted = [...comp].sort()
+    const key = sorted.length === 2 ? sorted.join(' <-> ') : ' ' + sorted.join(' ')
+    if (MUTUAL_PAIRS[key]) { notes.push('模块环（豁免）：' + key + ' —— ' + MUTUAL_PAIRS[key]); continue }
+    problems.push({ kind: '模块循环依赖', file: sorted[0], detail: '强连通分量(' + sorted.length + '): ' + key + '\n      三元及以上环 —— 文件对检查抓不到的那类。把环上某一边改成函数体内动态 import 断开。' })
+  }
+  if (sccs.length) notes.push('Tarjan 环检测：发现 ' + sccs.length + ' 个模块级环')
+  else notes.push('Tarjan 环检测：无模块级环')
+}
+
+// ── 仿生层红线一（2026-11-03 批）：field.sense 的器官感官必须走接线板 ──
+// field 直接 import organ/* 或 lib/immune 会重开 field→pain→hpa→field 环。
+// 动态 import 的边 Tarjan 不看（仓库口径允许函数体内动态断边），感官接错位
+// 不会立刻红，所以这里按"field 头部静态 import 指向 organ/immune"直接拦。
+function checkFieldSenses(files) {
+  const rel = 'tools/brain/field.mjs'
+  const f = path.join(ROOT, rel)
+  if (!fs.existsSync(f)) return
+  const src2 = stripComments(fs.readFileSync(f, 'utf8'))
+  for (const line of src2.split('\n')) {
+    const m = /^\s*import\s.*from\s+['"]([^'"]+)['"]/.exec(line)
+    if (!m) continue
+    const spec = m[1]
+    if (/^\.\/organ\//.test(spec) || /(^|\/)lib\/immune/.test(spec)) {
+      problems.push({ kind: 'field 感官接线违规', file: rel, detail: 'field 直接 import ' + spec + ' —— 会重开 field→organ→hpa→field 环。感官一律走 ./organs/senses.mjs 接线板（organ 侧用动态 import，见 senses.mjs 头注）。' })
+    }
+  }
+}
+
+// ── 仿生层红线二（2026-11-03 批）：自我核心件保护清单 tripwire ────────
+// 与 selfmod.mjs 的 PROTECTED 名单一致。selfmod 的 safeResolve 是运行时第一道闸；
+// 这里是第二道：任何代码若以字面路径直接写这些文件，门禁红。
+// （局限：只抓字面路径拼接；动态拼路径的写入靠 code review —— 注释在这里说清楚。）
+function selfCoreFiles() {
+  return [
+    'tools/lib/selfmod.mjs', 'tools/lib/selfmod-cmd.mjs', 'tools/lib/guard.mjs',
+    'tools/lib/inbound-auth.mjs', 'tools/lib/lock.mjs', 'scripts/check.mjs',
+    'tools/run-tests.mjs', 'tools/lib/wound.mjs', 'tools/commands/diagnose.mjs',
+    'tools/lib/brain-health.mjs',
+  ]
+}
+function checkSelfmodProtected(files) {
+  for (const f of files) {
+    const r = rel(f)
+    if (r === 'tools/lib/selfmod.mjs') continue
+    let src2 = ''
+    try { src2 = stripComments(fs.readFileSync(f, 'utf8')) } catch { continue }
+    if (!/(writeFileSync|writeFile|appendFileSync)\s*\(/.test(src2)) continue
+    const lines = src2.split('\n')
+    lines.forEach((line, i) => {
+      if (!/(writeFileSync|writeFile|appendFileSync)\s*\(/.test(line)) return
+      for (const cf of selfCoreFiles()) {
+        if (line.includes("'" + cf + "'") || line.includes('"' + cf + '"') || line.includes('`' + cf + '`')) {
+          problems.push({ kind: '自我核心件写入', file: r + ':' + (i + 1), detail: '疑似直接写保护文件 ' + cf + ' —— 自改必须走 selfmod 通道（备份/语法/门禁/回滚），核心件对她只读。' })
+        }
+      }
+    })
+  }
+}
