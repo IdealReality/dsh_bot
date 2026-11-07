@@ -33,22 +33,49 @@ export const PASSIVE_PLATFORMS = [
 /** 已下线但历史数据里还存在（只读兼容，不要再往这里写新东西）。 */
 export const RETIRED_PLATFORMS = ['douyin', 'douyin-dm']
 
+/**
+ * 宿主对话通道：不是面板上的平台开关，但确实是「用户本人在跟她说话」的入口。
+ *
+ * 目前只有 `dsh` —— `lib/dsh-bridge.mjs` 把 DSH 会话（桌面 / webui）里的真人输入
+ * 写成 platform='dsh' 的记忆事件。2026-11-08：diagnose 的认人检查硬写了
+ * qq|wechat|douyin-dm，漏掉 dsh，于是主人亲口说的 4 句（"在？""我想随时都能找到
+ * 写给我的日记"）被判成「外部事件被误标成用户」—— 红叉是假的，真问题会被它盖住。
+ */
+export const HOST_PLATFORMS = [{ id: 'dsh', label: 'DSH 会话' }]
+
 const BY_ID = new Map([...PLATFORMS, ...PASSIVE_PLATFORMS].map((p) => [p.id, p]))
+const HOST_BY_ID = new Map(HOST_PLATFORMS.map((p) => [p.id, p]))
 
 /** 取平台定义；未知平台返回 null（调用方自行决定怎么兜底）。 */
 export function platformOf(id) {
   return BY_ID.get(String(id || '')) || null
 }
 
-/** 是不是一个认识的平台（含已下线，用于读旧数据）。 */
+/** 是不是一个认识的平台（含已下线与宿主通道，用于读旧数据/校验日志）。 */
 export function isKnownPlatform(id) {
   const s = String(id || '')
-  return BY_ID.has(s) || RETIRED_PLATFORMS.includes(s)
+  return BY_ID.has(s) || HOST_BY_ID.has(s) || RETIRED_PLATFORMS.includes(s)
 }
 
 /** 平台显示名。 */
 export function labelOf(id) {
-  return platformOf(id)?.label || String(id || '?')
+  const s = String(id || '')
+  return BY_ID.get(s)?.label || HOST_BY_ID.get(s)?.label || s || '?'
+}
+
+/**
+ * 这个 platform 上的消息是不是「只冲着用户一个人」的入口 —— 即 owner 归属在这里
+ * 是**正常**的。记忆卫生体检用它判「外部内容被误标成用户」（认人错乱）。
+ *
+ * 算：私聊平台（qq/wechat）+ 已下线的私聊（douyin-dm）+ 宿主对话通道（dsh）。
+ * 不算：被动平台（bilibili/web，用户不是消息来源）、未知平台（宁可报错也别放过）。
+ */
+export function isOwnerChatPlatform(id) {
+  const s = String(id || '')
+  const def = BY_ID.get(s)
+  if (def) return def.private === true
+  if (s === 'douyin-dm') return true
+  return HOST_BY_ID.has(s)
 }
 
 /** 服务级开关的配置路径（qq → cfg.qq.enabled；wechat → cfg.wechat.enabled）。 */

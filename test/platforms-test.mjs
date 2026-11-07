@@ -36,6 +36,20 @@ assert.equal(P.allowsGroup('qq'), true)
 assert.equal(P.allowsGroup('wechat'), false, '微信没有群聊实现')
 assert.equal(P.allowsGroup('bilibili'), false)
 
+// ── 认人判定（记忆卫生体检用）：owner 归属在哪些 platform 上算正常 ────────────
+// 回归：2026-11-08 之前 diagnose 硬写 qq|wechat|douyin-dm，把 DSH 会话里主人亲口说的
+// 话判成「外部事件被误标成用户」（假红叉会盖住真问题）。
+assert.equal(P.isOwnerChatPlatform('qq'), true)
+assert.equal(P.isOwnerChatPlatform('wechat'), true)
+assert.equal(P.isOwnerChatPlatform('dsh'), true, 'DSH 会话是主人的对话入口')
+assert.equal(P.isOwnerChatPlatform('douyin-dm'), true, '已下线的私信仍是私聊入口')
+assert.equal(P.isOwnerChatPlatform('bilibili'), false, 'B站内容是外部来源')
+assert.equal(P.isOwnerChatPlatform('web'), false, '上网内容是外部来源')
+assert.equal(P.isOwnerChatPlatform('douyin'), false, '抖音(非私信)是外部来源')
+assert.equal(P.isOwnerChatPlatform('nope'), false, '未知平台不放过')
+assert.equal(P.labelOf('dsh'), 'DSH 会话', '宿主通道有显示名')
+assert.equal(P.isKnownPlatform('dsh'), true)
+
 // ── 快照（面板/diagnose 用） ────────────────────────────────────────────────
 const snap = P.snapshot(cfg({ qq: true, wechat: false }, { enabled: true }, { enabled: false }))
 assert.equal(snap.length, 4)

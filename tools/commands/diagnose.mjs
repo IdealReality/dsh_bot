@@ -13,6 +13,7 @@ import { execFileSync } from 'node:child_process'
 import { configPath, dataPath, credentialsPath, WORK_DIR, dshPath } from '../lib/paths.mjs'
 import { config, DEFAULTS } from '../lib/config.mjs'
 import { swallow } from '../lib/swallow.mjs'
+import { isOwnerChatPlatform } from '../lib/platforms.mjs'
 import { immuneSnapshot } from '../lib/immune.mjs'
 import { woundSnapshot } from '../lib/wound.mjs'
 
@@ -253,11 +254,19 @@ export async function run(argv = []) {
         // 同一句"（QQ 标记为表情包）"，只按 platform+gist 判重会误报成重复。
         const key = (j.where?.platform || '') + '|' + String(j.meta?.msgId || '') + '|' + String(j.gist || '').slice(0, 48)
         const prev = seen.get(key)
-        // 只算"机械重复"：同 key 在 5 分钟内再次写入（重连/重放/双写）。
+        // 只算"机械重复"：同 key 在很短时间内再次写入（重连/重放/双写）。
         // 隔半小时又刷到同一条视频是真实经历，不该算脏数据。
-        if (prev !== undefined && Math.abs(Number(j.at) - prev) < 5 * 60_000) dups++
+        // 2026-11-08：msgId 缺失时 key 只剩 platform+gist，用户**真的会连发同一句话**
+        // （实测 "在吗" 72s 后又发一次、"😋" 113s 后又发一次、同一句连发三次）——
+        // 用 5 分钟窗口会把真实对话算成脏数据（275 条里报 13 条，全是这种）。
+        // 机械重复发生在毫秒级，所以无 msgId 时窗口收到 10s。
+        const win = (j.meta?.msgId ? 5 : 0.17) * 60_000
+        if (prev !== undefined && Math.abs(Number(j.at) - prev) < win) dups++
         seen.set(key, Number(j.at))
-        if (j.where?.platform !== 'qq' && j.where?.platform !== 'wechat' && j.where?.platform !== 'douyin-dm'
+        // 认人：只有在「私聊 / 宿主对话」入口出现 owner 才算正常。以前这里硬写
+        // qq|wechat|douyin-dm，漏了 dsh（DSH 会话里的真人输入）→ 主人亲口说的话被判成
+        // 「外部事件被误标成用户」。判定统一收进 platforms.mjs（单一真相）。
+        if (!isOwnerChatPlatform(j.where?.platform)
             && j.who?.others?.some((o) => o.kind === 'owner')) ownerBad++
       }
       const rate = rows.length ? dups / rows.length : 0
