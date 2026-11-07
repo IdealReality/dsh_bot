@@ -203,7 +203,7 @@ export async function transcribe(wav, opts = {}) {
     const { stdout } = await execFileP(py, [
       '-c', PY, wav, opts.model || c.model, modelDir,
       opts.lang || 'zh', String(opts.maxSeconds || 0), dev, String(opts.computeType || ''),
-    ], { timeout: Number(opts.timeoutMs || 30 * 60_000), maxBuffer: 64 * 1024 * 1024, env })
+    ], { timeout: Number(opts.timeoutMs || 30 * 60_000), maxBuffer: 64 * 1024 * 1024, env, signal: opts.signal })
     // python 可能先打一堆进度/警告，JSON 在最后一行
     const lines = String(stdout || '').trim().split('\n')
     for (let i = lines.length - 1; i >= 0; i--) {
@@ -218,6 +218,8 @@ export async function transcribe(wav, opts = {}) {
     setHearWhy('转写进程没有输出 JSON')
     return null
   } catch (e) {
+    // 用户插话把转写掐了（2026-11-08）：这不是"听写坏了"，别把它记成设备/模型问题。
+    if (opts.signal?.aborted || e?.name === 'AbortError') { setHearWhy('转写被打断'); return null }
     setHearWhy('转写异常：' + String(e?.message ?? e).slice(0, 160))
     return null
   }

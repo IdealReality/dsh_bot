@@ -619,6 +619,23 @@ export async function analyze(file, opts = {}) {
       // 实际覆盖到哪：正常 = 整窗；被 abort/超时截断 = 解到的那一段。
       // 这两个数决定时间线敢不敢说"这段我看过了"（没看不能说静止）。
       segments.push({ t0: w.t0, t1: Math.min(w.t1, w.t0 + Math.max(rgb.dur, 1 / rgb.fps)), partial: Boolean(rgb.partial) })
+      // 增量印象（2026-11-08）：解完一个窗口就交付一次「已经看到的物理事实」。
+      // 这是"边看边知道"的关键一步 —— 不再等整片 decode 完才有第一句话。
+      if (typeof o.onProgress === 'function') {
+        try {
+          const evs = seg.events || []
+          o.onProgress({
+            t0: Number(w.t0.toFixed(2)),
+            t1: Number(Math.min(w.t1, w.t0 + Math.max(rgb.dur, 1 / rgb.fps)).toFixed(2)),
+            cuts: evs.filter((e) => Number(e.cutIn) > Number(o.cutEps ?? DEFAULTS.cutEps)).length,
+            moved: evs.filter((e) => !e.static).length,
+            peak: evs.reduce((mx, e) => Math.max(mx, Number(e.peak) || 0), 0),
+            detail: Number(evs.length ? evs[evs.length - 1].detail : 0) || 0,
+            partial: Boolean(rgb.partial),
+            windowsDone: segments.length,
+          })
+        } catch { /* 回调不许拖垮解码 */ }
+      }
       if (rgb.partial) break
     }
     if (!frames.length) return null

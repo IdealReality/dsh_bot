@@ -213,7 +213,7 @@ export async function watchMedia(input, opts = {}) {
       p,
       new Promise((r) => setTimeout(() => r(null), Math.max(200, ms))),
     ])
-    const visP = retina.analyze(file, { dur, budgetSec: analyzeBudget, fps: o.fps, windowSec: o.windowSec, signal: o.signal }).catch((e) => { swallow(e, 'watch:retina'); return null })
+    const visP = retina.analyze(file, { dur, budgetSec: analyzeBudget, fps: o.fps, windowSec: o.windowSec, signal: o.signal, onProgress: o.onProgress }).catch((e) => { swallow(e, 'watch:retina'); return null })
     const audP = audition.listen(file, { maxSec: o.maxAudioSec, signal: o.signal }).catch((e) => { swallow(e, 'watch:audition'); return null })
     const vis = await withTimeout(visP, deadline - Date.now())
     // 被打断时不再等耳朵：whisper 可能要几十秒，而他已经开口了。

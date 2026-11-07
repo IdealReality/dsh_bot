@@ -142,7 +142,7 @@ export async function listen(file, opts = {}) {
 
     const cap = o.maxSec > 0 ? o.maxSec : 0
     const timeoutMs = o.timeoutMs || Math.max(120_000, Math.min(30 * 60_000, (cap || res.dur || 600) * 5000))
-    const r = await transcribe(wav, { lang: o.lang, model: o.model, maxSeconds: 0, timeoutMs })
+    const r = await transcribe(wav, { lang: o.lang, model: o.model, maxSeconds: 0, timeoutMs, signal: o.signal })
     if (aborted()) { res.ok = true; res.why = '被打断了（在转写）'; return res }
     if (!r) { res.why = whyNoHear() || '转写没有输出'; res.ok = true; return res }
     res.device = r.device || null

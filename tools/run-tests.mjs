@@ -83,6 +83,7 @@ const TESTS = [
   'vision-test.mjs',
   'vision-inbound-test.mjs',   // 视频入站：fold 不拍平图片段 / 无地址要说话 / 体积与单帧阈值（2026-11-07）
   'watch-av-test.mjs',         // 视听前端：预测误差切事件 / 快切不并段 / 静止字可读 / 预算降级（2026-11-08）
+  'vision-organ-test.mjs',     // 视觉器官（2026-11-08）：记账 / 增量印象 / 失败原因 / 体感与表达 / phrase
   'sensory-gain-test.mjs',     // 感觉增益：器官读数→采样档位 / 显式参数优先 / 读不到回退（2026-11-08）
   'bili-audio-test.mjs',
   'adapt-frames-test.mjs',  // 抽帧策略：阈值自适应 / 骨架覆盖 / 预算上限   // 音频/ASR：成稿合并 + 失败语义（不打网络）

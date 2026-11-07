@@ -868,6 +868,10 @@ const ALLOWED_REVERSE = [
   'tools/lib/sensory-gain.mjs',      // 感觉增益（2026-11-07）：把器官读数（field 情绪场 / metabolism 能量）
                                      // 翻译成视听采样参数（看几帧、看多密、听多久）。读数源在脑、
                                      // 翻译在 lib —— 与 body.mjs 同方向：判断在脑，执行接线在 lib。
+  'tools/lib/videoframe.mjs',        // 视频段的入口统一到视觉器官（2026-11-08）：器官在 brain/organ/vision，
+                                     // 适配层在 lib —— 与 cohere-bridge / sensory-gain 同方向。
+                                     // 它只把 QQ 消息段转成 {url}，记账（看了几次/几次没看成）与
+                                     // 增量印象（解完一个窗口就交付）都由器官负责。
 ]
 
 // brain → commands 的反向依赖白名单（2026-11-07 补机制）。

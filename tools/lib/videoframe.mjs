@@ -6,8 +6,10 @@
 //     ② 3 帧均匀采样看不见动作，也听不到声音 —— 她只能说"我看了"，内容全靠编。
 //   2026-11-08 起：抽帧/切窗/事件分割/注视点/拼贴/听写全部交给
 //     retina.mjs（预测误差）+ audition.mjs（语音与声音事件）+ watch.mjs（视听对齐）。
-//   这里只保留"QQ 消息段 → watchMedia"这一层适配，不做任何图像处理。
-import { watchMedia } from './watch.mjs'
+//   2026-11-08 晚：入口统一到 **organ/vision**（器官门面）—— 它负责记账
+//     （看了几次、几次没看成、平均多久、耳朵是否可用），并透传增量印象。
+//     这里只保留"QQ 消息段 → 器官"这一层适配，不做任何图像处理。
+import * as vision from '../brain/organ/vision.mjs'
 import { swallow } from './swallow.mjs'
 
 /**
@@ -27,7 +29,7 @@ export async function sampleVideo(seg, { getVideoUrl, opts = {} } = {}) {
       url = String(r || '').trim()
     }
     if (!url || !/^https?:\/\//.test(url)) return null
-    const w = await watchMedia({ url }, opts)
+    const w = await vision.look({ url }, opts)
     if (!w.ok) {
       // 诚实兜底：说清楚没看成，带上具体原因（HTTP 403 / 没有音轨 / 超出预算 / 被他打断…）
       return {

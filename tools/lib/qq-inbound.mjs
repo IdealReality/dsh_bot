@@ -52,7 +52,16 @@ export async function prepareInbound(o = {}) {
     if (vurl) {
       const raw = String(vurl)
       const isHttp = /^https?:\/\//.test(raw)
-      const vf = await sampleVideo({ url: isHttp ? raw : '' }, { opts: { signal: o.signal } })
+      // 增量印象：解完第一个窗口就打一行（"她边看边知道"的证据）。
+      // 只打第一条 —— 长片有几十个窗口，全打会把日志刷成噪声。
+      let firstImp = null
+      const onImpression = (p) => {
+        if (firstImp) return
+        firstImp = p
+        const kind = Number(p.cuts) > 0 ? '换了镜头' : Number(p.moved) > 0 ? '有动作' : '静止'
+        log?.(`[qq] 👁 印象 ${p.t0}-${p.t1}s：${kind}（此时整片还没解完）`)
+      }
+      const vf = await sampleVideo({ url: isHttp ? raw : '' }, { opts: { signal: o.signal, onImpression } })
       if (vf) {
         if (vf.interrupted) log?.(`[qq] ⏹ 看视频被打断：只看到 ${vf.seenTo || 0}s / ${vf.frames?.length || 0} 帧（他插话了，先答他）`)
         // note 是前提（几秒、几段、听清几句），timeline 是逐段的画面+声音事实。
