@@ -30,7 +30,7 @@ export function ownerTitle(cfg = config()) {
  * 程序名（与"她的名字"是两件事）。
  *
  * 2026-11-02 用户定的口径：
- *   · 插件/程序改叫 dsh_bot，作者 idealrainbowbridge
+ *   · 插件/程序改叫 dsh_bot，作者 IdealReality（2026-11-08 起；旧 handle idealrainbowbridge 的账号已丢失）
  *   · **她还是理想的机械人**，自称鲸鱼娘，identity 一个字段都不改
  *   · 但她**可以知道**"我这套程序叫 dsh_bot"
  *
@@ -40,7 +40,7 @@ export function ownerTitle(cfg = config()) {
  *   她能答得上来，而不是"我不知道"。
  */
 export const PROGRAM_NAME = 'dsh_bot'
-export const PROGRAM_AUTHOR = 'idealrainbowbridge'
+export const PROGRAM_AUTHOR = 'IdealReality'
 
 export function selfIntro(cfg = config()) {
   const name = selfName(cfg)

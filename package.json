@@ -16,7 +16,7 @@
     "tts",
     "snowluma",
     "sticker",
-    "idealrainbowbridge"
+    "IdealReality"
   ],
   "type": "module",
   "main": "lib/index.js",
@@ -72,8 +72,12 @@
     "note": "插件用的是 DSH 内部服务（webServer/connection/sessionController/permissionPresets）。升级 DSH 后请跑 node tools/bot.mjs diagnose —— 契约不满足会在那里报出来。"
   },
   "license": "MIT",
-  "author": "idealrainbowbridge",
+  "author": "IdealReality",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/IdealReality/dsh_bot.git"
+  },
   "contributors": [
-    "idealrainbowbridge"
+    "IdealReality"
   ]
 }

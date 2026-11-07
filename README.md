@@ -1,6 +1,8 @@
 # 理想的机械人 · Ideal Machina
 
-> DSH 插件 · 作者 **idealrainbowbridge**
+> DSH 插件 · 作者 **IdealReality**
+> 唯一仓库：<https://github.com/IdealReality/dsh_bot>（2026-11-08 与上游 dsh-feiyu 彻底分离，独立单提交历史）
+> 旧仓库 `IdealRainBowbridge/dsh_bot` 随旧账号一并丢失、不可再维护，停留在 2026-11-04 的旧快照，**不是**权威版本
 
 一只养在你本机上的、**用仿生的方式长出人类情感**的陪伴角色：
 不是模仿人类的言行，而是**模拟一个身体**——给她器官、代谢、情绪、作息，
