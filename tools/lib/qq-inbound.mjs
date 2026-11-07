@@ -59,7 +59,8 @@ export async function prepareInbound(o = {}) {
         if (firstImp) return
         firstImp = p
         const kind = Number(p.cuts) > 0 ? '换了镜头' : Number(p.moved) > 0 ? '有动作' : '静止'
-        log?.(`[qq] 👁 印象 ${p.t0}-${p.t1}s：${kind}（此时整片还没解完）`)
+        const fmt = (t) => (Math.round(Number(t) * 10) / 10).toFixed(1)
+        log?.(`[qq] 👁 印象 ${fmt(p.t0)}-${fmt(p.t1)}s：${kind}（此时整片还没解完）`)
       }
       const vf = await sampleVideo({ url: isHttp ? raw : '' }, { opts: { signal: o.signal, onImpression } })
       if (vf) {
