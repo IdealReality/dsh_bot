@@ -163,4 +163,23 @@ const mk = (chatId, text) => ({ chatId, platform: 'qq', evt: { __text: text, mes
   assert.equal(n, 0, '注销后不该再被调用')
 }
 
-console.log('✓ channel-test 全部通过（串行/并行/合并/限流/TTL/积压/容错/抢占）')
+// ── 11. 合并必须保留附件段（2026-11-08）────────────────────────────────────
+//
+// 实测病象：发一段视频后 600ms 补一句，两条进同一个合并批 —— 旧代码把 message
+// 换成一整段纯文本，视频段消失。她收到的正文只有两句话，于是"视频我看了"
+// 全是凭空说的（日志里她甚至说"视频打不开"，因为根本没有视频可看）。
+{
+  const { synthBatch } = await import('../tools/lib/channel-io.mjs')
+  const s = synthBatch({
+    chatId: 'a', platform: 'qq',
+    items: [
+      { at: Date.now(), evt: { message: [{ type: 'video', data: { url: 'http://x/1.mp4' } }, { type: 'text', data: { text: '看看这个' } }], __text: '看看这个' } },
+      { at: Date.now(), evt: { message: [{ type: 'text', data: { text: '等会儿再看' } }], __text: '等会儿再看' } },
+    ],
+  })
+  const types = (s.message || []).map((x) => x.type)
+  assert.ok(types.includes('video'), '合并后视频段不许丢（实际 [' + types.join(',') + ']）')
+  assert.equal(s.__text, '看看这个\n等会儿再看', '文本仍按到达顺序拼')
+}
+
+console.log('✓ channel-test 全部通过（串行/并行/合并/限流/TTL/积压/容错/抢占/附件保留）')
