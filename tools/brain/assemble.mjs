@@ -230,12 +230,14 @@ function slotList(ctx) {
   //   · working 的 topic 只有一句原话，没有时效标注，且常常就是这个 chat 的最后一句
   //     → 只在 recall 槽为空时兜底
   // 判重方式用**子串包含**而不是全等：working 存的常常是 gist 的截断版。
-  const recallText = (() => {
-    try {
-      const b = recall.bundle({ platform, chatId, userId, userText, isGroup, now, isOwner: isGroup ? undefined : (String(cfg.owner?.qq || '') ? (String(userId) === String(cfg.owner?.qq || '')) : undefined) })
-      return b.lines.join('\n')
-    } catch { return '' }
-  })()
+  // 2026-11-08：原来这里和下面 memchannel 段各算一次 recall.bundle() —— 同一轮装调用两次，
+  // 而 bundle 内部每次还要 3 遍 allEpisodes()（目录扫描 + 每文件 stat）。算一次，两处复用。
+  const isOwnerArg = isGroup ? undefined : (String(cfg.owner?.qq || '') ? (String(userId) === String(cfg.owner?.qq || '')) : undefined)
+  let bundle = null
+  try {
+    bundle = recall.bundle({ platform, chatId, userId, userText, isGroup, now, isOwner: isOwnerArg })
+  } catch (e) { bundle = null }
+  const recallText = bundle ? bundle.lines.join('\n') : ''
   // 判重用的指纹：剥掉 working 自己加的前缀（"刚说的："），再去掉标点空白。
   //
   // ⚠️ 第一版用"前 12 字包含"失败。working 里存的是
@@ -282,7 +284,10 @@ function slotList(ctx) {
   //
   // 现在交给 memchannel 加工三件事：合并同一件事 / 加一句"为什么现在想起它" /
   // 证据不够就不硬凑。检索（recall）只负责找，**加工是编排层的事**。
-  const bundle = recall.bundle({ platform, chatId, userId, userText, isGroup, now, isOwner: isGroup ? undefined : (String(cfg.owner?.qq || '') ? (String(userId) === String(cfg.owner?.qq || '')) : undefined) })
+  // 复用上面已经算过的那份 bundle（同一个 chatId/userText，结果必然一致）
+  if (!bundle) {
+    try { bundle = recall.bundle({ platform, chatId, userId, userText, isGroup, now, isOwner: isOwnerArg }) } catch (e) { bundle = { lines: [], ids: [] } }
+  }
   let recalled = { lines: bundle.lines, ids: bundle.ids, merged: 0 }
   try {
     const mc = memchannel.process({

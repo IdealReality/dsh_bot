@@ -100,7 +100,7 @@ function parseLockPid(raw) {
   return Number.isFinite(n) && n > 0 ? n : 0
 }
 
-function acquireSameDirLock(file) {
+function acquireSameDirLock(file, waitMs = LOCK_WAIT_MS) {
   // 2026-11-05：先建目录再建锁文件 —— 以前靠"无锁降级裸写"路径里的 ensureDir
   // 无意中兜了底，fail-closed 之后目录不存在时锁创建必败（ENOENT）→ 全体写入方
   // 拿 null。锁系统必须自足，不能依赖写入方先建好目录。
@@ -114,7 +114,8 @@ function acquireSameDirLock(file) {
   try { fd = fs.openSync(mine, 'wx') } catch (e) { return { ok: false, why: 'create:' + (e && e.code) } }
   // 锁内容 = pid + token（两行）：pid 给存活探测用，token 给 release 认领用
   try { fs.writeSync(fd, String(process.pid) + '\n' + token) } finally { try { fs.closeSync(fd) } catch { /* ignore */ } }
-  const deadline = Date.now() + LOCK_WAIT_MS
+  const waitCap = Number(waitMs) > 0 ? Number(waitMs) : LOCK_WAIT_MS
+  const deadline = Date.now() + waitCap
   for (;;) {
     try { fs.linkSync(mine, lock); try { fs.rmSync(mine, { force: true }) } catch { /* ignore */ } return { ok: true, lock, token } }
     catch (e) {
@@ -193,7 +194,7 @@ function releaseSameDirLock(lock, token) {
  *   · 5s 等不到 / 锁系统坏：无锁降级跑（= 旧版行为，偶发丢更新好过聊天链路挂起），
  *     swallow 留痕。
  */
-export function mutateJson(file, fallback, fn) {
+export function mutateJson(file, fallback, fn, opts = {}) {
   const body = () => {
     const cur = readJson(file, fallback)
     const next = fn(cur)
@@ -205,7 +206,9 @@ export function mutateJson(file, fallback, fn) {
   // 改为退避重试 3 次（共多等 ~2.4s）；仍失败才降级并留下响亮的告警。
   let whyLast = '?'
   for (let attempt = 0; attempt < 3; attempt++) {
-    const g = acquireSameDirLock(file)
+    // 2026-11-08：waitMs 现在真能传（默认 5s，生产不变）。测试用它把「活锁」用例的
+    // 等待从 3×5s+退避 压到 300ms —— lock-adversarial 从 50.6s 掉到个位数。
+    const g = acquireSameDirLock(file, opts.waitMs)
     if (g.ok) {
       try { return body() } finally { releaseSameDirLock(g.lock, g.token) }
     }

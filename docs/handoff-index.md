@@ -429,6 +429,23 @@ locks/                  自由进程单实例锁
     - **看番走异步**：`runCliAsync()`（`execFile`）。以前 `spawnSync` 会把事件循环钉住几分钟 —— 那段时间她连用户发的消息都回不了。
     - **机器睡 = 她停摆**：`powercfg /change standby-timeout-ac 0` 才能让她有夜生活；不动电源计划的话，让她"夜里补做"就永远只能等醒来那一下（代码已保证醒来 25 秒内补做）。
 
+46. **2026-11-08 全插件优化轮（六类问题，全部有前后实测对照）**
+    - **诊断先得说真话**：`diagnose` 的「认人」判定硬写 `qq|wechat|douyin-dm`，漏掉 `dsh`（DSH 会话里的真人输入）→ 主人亲口说的 4 句（"在？""我想随时都能找到写给我的日记"）被判成「外部事件被误标成用户」。判定已收进 `tools/lib/platforms.mjs` 的 `isOwnerChatPlatform()`（含 `HOST_PLATFORMS`），单测钉住 8 个平台的归属。
+    - **「重复 13 条」全是误报**：msgId 缺失时 key 退化成 `platform+gist`，5 分钟窗口把用户真连发的话（实测 "在吗" 72s 后又发一次、"😋" 113s 后又发一次、同一句连发三次）算成脏数据。现在按有无 msgId 分窗（10s / 5min），实测 275 条 → 0 条。
+    - **吞错台账终于有人读**：`diagnose` 原来只报 swallowed.log 字节数（220 处 `swallow` 写了没人看）。现在聚合近 24 小时的 `tag × 次数：最后一条消息`，直接暴露"哪条路径在偷偷失败"。
+    - **测试不再往她的台账里写噪声**：`channel-test`（'boom'）与 `lifecycle-test`（'x'）没隔离数据目录，故意抛的错真写进了她的 `swallowed.log`（实测 72+68 条，把真故障淹掉）。新增 `test/_isolate.mjs` 前置，两套测试改成 `import './_isolate.mjs'` 打头。
+    - **记忆热路径少读**：`memory.readRows` / `recentFromBrain` 按文件指纹（size+mtime）缓存 —— 同一条 QQ 消息里 `recent()` 被调 3 次（判空 + 两处上下文），旧库为空时那 3 次都要 readdir + 整月分片全量 parse。实测 cold 4.5ms → warm 0.18ms。`brain/assemble` 同一轮装把 `recall.bundle()` 从 2 次降到 1 次（每次 bundle 内部还要 3 遍 `allEpisodes()`）。
+    - **三个「真等待 / 真泄漏」**（都不是测试问题，是生产问题）：
+      1) `imggen.buildImagePrompt` 的 15 秒兜底定时器从不 `clear` 也不 `unref` —— `chat()` 先返回后它仍钉住事件循环，**命令干完了进程还要多活 15 秒**（imggen-test 15.1s → 0s）；
+      2) `asr-core.asrPython()` 每次调用都同步跑 `python -c 'import faster_whisper'`（20s 超时）且无 memo —— 一次 listen 付两遍 python 冷 import，全在同步路径上挡住回消息。改为按候选链缓存（命中 10 分钟 / 未命中 60 秒），watch-av 56.7s → 42s；
+      3) `brain/json.mutateJson` 的 `waitMs` **参数根本不存在**（测试传了也白传），活锁用例只能硬等 `3 × 5s + 退避`。补上 `opts.waitMs`（生产默认仍是 5s），lock-adversarial 50.6s → 11s，并加回归断言 `waitMs 真的传进了锁`。
+    - **无界增长收口**（实测体积 → 策略）：
+      · `~/.data/voice/*.wav` 与 `voice/tmp/*.wav` 只写不删（46MB / 71 个文件，约 10–30MB/天）→ `pruneVoiceDir()`：成品 7 天且 ≤200 个，tmp ≤60 个；
+      · `brain/inbox/<proc>-YYYYMMDD.jsonl` 分片永不清理，且 brainTick（30s）每轮把**每个**分片整份 `readJsonl` → 游标加 `size` 短路（没变就跳过）+ 消费完超 3 天连游标一起删；
+      · `lib/index.js` mindTick 为取最后一行读**整个** `mind-history.jsonl`（append-only 无上限）→ 改尾部 4KB（复用 `memory.readTail`）。
+    - **watchdog 不再谎报**：以前先打印「（已 QQ 通知管理员）」再发通知，而 `sendOwnerQQ` 在 `guard.dryRun` / 去重时只返回 false —— 日志说通知了、管理员啥也没收到。现在按真实结果打（发出去 / 没发出去的原因）。
+    - **顺带**：`tools/bot.mjs` 的 COMMANDS 表里 `web:` 键重复写了两次（对象字面量后一个覆盖前一个），删掉多余的一份。
+
 ---
 
 ## 八、现存问题（按优先级）

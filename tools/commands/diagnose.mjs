@@ -12,7 +12,7 @@ import path from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { configPath, dataPath, credentialsPath, WORK_DIR, dshPath } from '../lib/paths.mjs'
 import { config, DEFAULTS } from '../lib/config.mjs'
-import { swallow } from '../lib/swallow.mjs'
+import { swallow, readSwallowed, swallowedStats } from '../lib/swallow.mjs'
 import { isOwnerChatPlatform } from '../lib/platforms.mjs'
 import { immuneSnapshot } from '../lib/immune.mjs'
 import { woundSnapshot } from '../lib/wound.mjs'
@@ -219,11 +219,31 @@ export async function run(argv = []) {
     }
   } catch (e) { items.push(warn('内置浏览器', '体检失败：' + e.message)) }
 
-  // 5) 空 catch 留痕日志
-  const sw = dataPath('logs', 'swallowed.log')
-  items.push(fs.existsSync(sw)
-    ? ok('吞错留痕', sw + '（' + fs.statSync(sw).size + ' 字节）')
-    : ok('吞错留痕', '还没有被吞掉的错误'))
+  // 5) 吞错留痕（两本账：真事故 / 预期缺失）
+  // 2026-11-08：以前这里只报文件字节数 —— 台账写了没人读，220 处 swallow 效果上还是静默。
+  // 现在把**近 24 小时**真被吞掉的错误按位置聚合出来：体检能直接看到「哪条路径在偷偷失败」。
+  try {
+    const stats = swallowedStats()
+    const since = Date.now() - 24 * 3600_000
+    const groups = new Map()
+    for (const line of readSwallowed(400)) {
+      const m = /^(\S+Z)\s+(\S+)\s+×(\d+)\s+最后：(.*)$/.exec(line)
+      if (!m) continue
+      const t = Date.parse(m[1])
+      if (!Number.isFinite(t) || t < since) continue
+      const g = groups.get(m[2]) || { count: 0, last: '' }
+      g.count += Number(m[3]) || 1
+      g.last = m[4]
+      groups.set(m[2], g)
+    }
+    const top = [...groups.entries()].sort((a, b) => b[1].count - a[1].count).slice(0, 3)
+    const brief = '真事故 ' + stats.real.bytes + ' B / 预期缺失 ' + stats.soft.bytes + ' B'
+    if (!stats.real.exists && !stats.soft.exists) items.push(ok('吞错留痕', '两本账都还没有条目'))
+    else if (!top.length) items.push(ok('吞错留痕', '近 24 小时无新条目（' + brief + '）'))
+    else items.push(warn('吞错留痕', '近 24 小时 ' + top.reduce((s, [, g]) => s + g.count, 0) + ' 次 —— '
+      + top.map(([tag, g]) => tag + ' ×' + g.count + '：' + String(g.last).slice(0, 60)).join(' · ')
+      + '（' + brief + '）'))
+  } catch (e) { items.push(warn('吞错留痕', '检查失败：' + e.message)) }
 
   // 5.2) 协议适配：中转网关会不会丢 system 角色（10-31 实测 a2a 会丢）
   try {

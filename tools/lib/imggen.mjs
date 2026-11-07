@@ -173,13 +173,26 @@ export async function buildImagePrompt(caption, chat) {
   const fallback = `${STYLE}, mood: ${cap}, adorable`
   if (typeof chat !== 'function') return fallback
   try {
-    const out = await Promise.race([
-      chat([
-        { role: 'system', content: '你是文生图提示词工程师。把一条中文表情包文案翻译成英文文生图 prompt：描述这只圆滚滚卡通蓝鲸鱼娘在此场景下的表情、动作、情绪。只输出英文短语（50 词以内），不要解释不要换行。' },
-        { role: 'user', content: `文案：${cap}\n英文 prompt：` },
-      ], { temperature: 0.7, max_tokens: 120 }),
-      new Promise((_r, rej) => setTimeout(() => rej(new Error('prompt 翻译超时')), 15000)),
-    ])
+    // 2026-11-08：原来这个 15 秒兜底定时器**从不 clear 也不 unref** —— chat() 先返回后
+    // 它仍活着，把事件循环钉住 15 秒。实测 imggen-test 15.1s 里 15.0s 全是它在等；
+    // 生产里就是「命令已经干完了，进程还要多活 15 秒」，短命 CLI 直接被拖慢。
+    let timer = null
+    const timeout = new Promise((_r, rej) => {
+      timer = setTimeout(() => rej(new Error('prompt 翻译超时')), 15000)
+      timer.unref?.()
+    })
+    let out
+    try {
+      out = await Promise.race([
+        chat([
+          { role: 'system', content: '你是文生图提示词工程师。把一条中文表情包文案翻译成英文文生图 prompt：描述这只圆滚滚卡通蓝鲸鱼娘在此场景下的表情、动作、情绪。只输出英文短语（50 词以内），不要解释不要换行。' },
+          { role: 'user', content: `文案：${cap}\n英文 prompt：` },
+        ], { temperature: 0.7, max_tokens: 120 }),
+        timeout,
+      ])
+    } finally {
+      clearTimeout(timer)
+    }
     const t = String(out || '').trim().replace(/\s+/g, ' ')
     return t ? `${STYLE}, ${t.slice(0, 300)}` : fallback
   } catch { return fallback }

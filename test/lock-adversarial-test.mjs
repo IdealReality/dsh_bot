@@ -38,7 +38,7 @@ await new Promise((r) => setTimeout(r, 300))
 // brain/json 的 API 是 mutateJson(file, fallback, fn)；readJson 即 safe read。
 const { mutateJson, readJson, writeJsonAtomic } = await import('../tools/brain/json.mjs')
 const updateJson = (file, fn, opt = {}) => {
-  try { const v = mutateJson(file, null, fn); return { ok: true, value: v } } catch (e) { return { ok: false, error: String(e?.message || e) } }
+  try { const v = mutateJson(file, null, fn, opt); return { ok: true, value: v } } catch (e) { return { ok: false, error: String(e?.message || e) } }
 }
 const readJsonSafe = (file, fallback) => readJson(file, fallback)
 
@@ -56,6 +56,20 @@ try {
     const stillThere = fs.existsSync(lock) && fs.readFileSync(lock, 'utf8').includes('other.token')
     ok('别人的活锁不会被误删', stillThere, stillThere ? '锁仍在' : '锁被删了（旧实现的 bug）')
     ok('无锁降级仍然写入了（不卡死业务）', r.ok === true || r.error === 'write-failed', JSON.stringify(r).slice(0, 80))
+  }
+
+  // ── ①b waitMs 生效：活锁 + 短等待必须**很快**返回 ───────────────────────
+  // 回归（2026-11-08）：helper 收了 opt 却从不传下去，mutateJson 也没有这个参数 ——
+  // 于是三个「活锁」用例各硬等 3×5s+退避 ≈ 16s，整套从个位数被拖到 50.6s。
+  {
+    const file = path.join(TMP, 'waitms.json')
+    writeJsonAtomic(file, { n: 0 })
+    fs.writeFileSync(file + '.lock', String(livePid) + '\ntoken-x')
+    const t0 = Date.now()
+    updateJson(file, (cur) => ({ n: Number(cur?.n || 0) + 1 }), { waitMs: 300 })
+    const ms = Date.now() - t0
+    // 3 次 × 300ms + 退避（≤400+600+随机）≈ 上限 2.2s；旧实现是 3×5s ≈ 16s
+    ok('waitMs 真的传进了锁（不再硬等 5s×3）', ms < 3000, ms + 'ms')
   }
 
   // ── ② 抢占原子性：两个竞争者抢同一把死锁，只有一个进临界区 ──────────────

@@ -318,12 +318,48 @@ export function shardsOf(base) {
  * @param {string} chatId 指定会话；传空串表示"全量"（回忆/统计用）
  * @param {{includeWechat?: boolean}} opts 全量读取时是否带上微信（默认不带）
  */
+// 2026-11-08 热路径优化：同一条 QQ 消息里 readRows 会被走 3 次
+// （qq-server 判空一次、persona 取上下文两次），每次都是全量 readFileSync+逐行 JSON.parse。
+// 用「文件指纹（size+mtime）」当键：任何一次 append 都会改指纹 → 立刻失效，
+// 所以不会读到过期对话；同一轮里的重复读直接复用。返回的行对象是**只读共享**的，
+// 调用方只许 filter/map 出新数组，不许就地改行。
+const _rowsCache = new Map() // stamp -> rows
+const ROWS_CACHE_MAX = 8
+
+export function stampOf(files) {
+  let s = ''
+  for (const f of files) {
+    try {
+      const st = fs.statSync(f)
+      s += f + ':' + st.size + ':' + st.mtimeMs + ';'
+    } catch { s += f + ':-;' }
+  }
+  return s
+}
+
+function cacheGet(map, key) {
+  const hit = map.get(key)
+  if (hit === undefined) return null
+  // 只刷新 LRU 顺序，不改内容
+  map.delete(key)
+  map.set(key, hit)
+  return hit
+}
+
+function cachePut(map, key, value, max) {
+  map.set(key, value)
+  while (map.size > max) map.delete(map.keys().next().value)
+}
+
 function readRows(chatId, opts = {}) {
   const bases = chatId
     ? [...new Set([EP_FILE, episodeFile(platformOf(chatId))])]
     : [EP_FILE, QQ_EP_FILE, ...(opts.includeWechat ? [WECHAT_EP_FILE] : [])]
   const files = []
   for (const b of bases) files.push(...shardsOf(b))
+  const stamp = (chatId || '') + '|' + (opts.includeWechat ? 'w' : '') + '|' + stampOf(files)
+  const cached = cacheGet(_rowsCache, stamp)
+  if (cached !== null) return cached
   const rows = []
   for (const file of files) {
     let lines = []
@@ -337,6 +373,7 @@ function readRows(chatId, opts = {}) {
     }
   }
   rows.sort((a, b) => Number(a.ts) - Number(b.ts))
+  cachePut(_rowsCache, stamp, rows, ROWS_CACHE_MAX)
   return rows
 }
 
@@ -404,16 +441,24 @@ export function recent(chatId, n = 8) {
  * 内容用 `quote`（原话）而不是 `gist`（摘要）：上下文里给她摘要，
  * 她会照着摘要的措辞说话，读起来像在复述笔记。
  */
+const _brainRecentCache = new Map() // chatId|n|stamp -> rows
+
 function recentFromBrain(chatId, n = 8) {
   const dir = dataPath('brain', 'ep')
   let files = []
   try { files = fs.readdirSync(dir).filter((f) => /^\d{4}-\d{2}\.jsonl$/.test(f)).sort() } catch { return [] }
   if (!files.length) return []
   // 只读最近两个月的分片：跨月时上个月月末的对话也要能接上
+  const picked = files.slice(-2).map((f) => path.join(dir, f))
+  // 2026-11-08：旧库为空时这里就是每条消息的真实读路径（readdir + 整月分片全量 parse），
+  // 而 recent() 一条消息里被调 3 次 → 同一份 187KB 解析 3 遍。按文件指纹缓存。
+  const stamp = chatId + '|' + n + '|' + stampOf(picked)
+  const cached = cacheGet(_brainRecentCache, stamp)
+  if (cached !== null) return cached
   const rows = []
-  for (const f of files.slice(-2)) {
+  for (const f of picked) {
     let lines = []
-    try { lines = fs.readFileSync(path.join(dir, f), 'utf8').split('\n').filter(Boolean) } catch { continue }
+    try { lines = fs.readFileSync(f, 'utf8').split('\n').filter(Boolean) } catch { continue }
     for (const line of lines) {
       let ep
       try { ep = JSON.parse(line) } catch { continue }
@@ -428,9 +473,10 @@ function recentFromBrain(chatId, n = 8) {
     }
   }
   rows.sort((a, b) => Number(a.at) - Number(b.at))
-  return rows.slice(-n)
+  const out = rows.slice(-n)
+  cachePut(_brainRecentCache, stamp, out, 16)
+  return out
 }
-
 
 /** 该会话里「用户最后一次说话」「她最后一次说话」的时间戳（给时间常驻层用）。 */
 export function lastByRole(chatId) {

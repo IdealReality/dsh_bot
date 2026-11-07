@@ -53,20 +53,40 @@ export function cudaLibPath() {
   ].join(':')
 }
 
-/** ASR 解释器：优先独立 venv，其次环境变量，最后系统 python。探不通就 null。 */
+/**
+ * ASR 解释器：优先独立 venv，其次环境变量，最后系统 python。探不通就 null。
+ *
+ * 2026-11-08：探测原来是**每次调用都同步跑** `python -c 'import faster_whisper'`（20s 超时）。
+ * 实测一次 listen 最多付两遍 python 冷 import（asrReady + transcribe），而且全在同步路径上，
+ * 直接钉住事件循环，谁也别想在这段时间回消息。现在按「进程 + 候选链」缓存：
+ * 探通了留 10 分钟，探不通只留 60 秒（装好了能很快恢复，不会一次失败记一辈子）。
+ */
+const ASR_PY_HIT_MS = 10 * 60_000
+const ASR_PY_MISS_MS = 60_000
+let _asrPyCache = { key: '', at: 0, value: null }
+
 export function asrPython() {
   const cands = [
     process.env.BOT_ASR_PYTHON,
     asrVenvPython(),
     '/usr/bin/python3',
   ].filter(Boolean)
+  const key = cands.join('|')
+  const age = Date.now() - _asrPyCache.at
+  if (_asrPyCache.key === key && _asrPyCache.at > 0) {
+    const ttl = _asrPyCache.value ? ASR_PY_HIT_MS : ASR_PY_MISS_MS
+    if (age < ttl) return _asrPyCache.value
+  }
+  let found = null
   for (const p of cands) {
     try {
       execFileSync(p, ['-c', 'import faster_whisper'], { stdio: 'ignore', timeout: 20000 })
-      return p
+      found = p
+      break
     } catch { /* 下一个 */ }
   }
-  return null
+  _asrPyCache = { key, at: Date.now(), value: found }
+  return found
 }
 
 /** ASR 可调项（环境变量覆盖；换机器不用改代码）。 */

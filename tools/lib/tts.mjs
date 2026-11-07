@@ -338,6 +338,40 @@ export function concatWav(files, out, gapSec = 0.18) {
 
 // ---------- 单次调用 ----------
 
+/**
+ * 语音目录剪枝（2026-11-08）。
+ *
+ * 病象：`~/.data/voice/` 与 `voice/tmp/` **只写不删** —— 合成成品写进去、分块挑剩的删掉，
+ * 但成品和「被选中的分块」永远留着。实测 46MB / 成品 30 个 + tmp 41 个，按现用量
+ * ≈10–30MB/天线性增长，磁盘只会越来越满，而且没人会注意到（没有报错）。
+ *
+ * 策略（保守，不碰业务）：成品留 7 天、最多 200 个；tmp 是过程产物，最多 60 个。
+ * 语音文件不参与任何业务读取（只用于当次发送与调试回听），过期即删安全。
+ */
+export function pruneVoiceDir(now = Date.now()) {
+  const keepMs = 7 * 24 * 3600_000
+  const sweep = (dir, keepMax) => {
+    let names = []
+    try { names = fs.readdirSync(dir).filter((f) => /\.wav$/i.test(f)) } catch { return { removed: 0, freed: 0 } }
+    const items = []
+    for (const f of names) {
+      const p = path.join(dir, f)
+      try { const st = fs.statSync(p); items.push({ p, size: st.size, mtime: st.mtimeMs }) } catch { /* 并发删/写中，跳过 */ }
+    }
+    items.sort((a, b) => b.mtime - a.mtime)   // 新的在前
+    let removed = 0, freed = 0
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i]
+      if (i < keepMax && now - it.mtime < keepMs) continue
+      try { fs.rmSync(it.p, { force: true }); removed++; freed += it.size } catch (e) { swallow(e, 'tts:pruneVoiceDir') }
+    }
+    return { removed, freed }
+  }
+  const a = sweep(path.join(dataPath(), 'voice', 'tmp'), 60)
+  const b = sweep(path.join(dataPath(), 'voice'), 200)
+  return { tmp: a, voice: b }
+}
+
 async function ttsOnce(text, outFile, { ref, prof, override, v }) {
   const url = v.sovits_url || 'http://127.0.0.1:9880/tts'
   const body = {
@@ -450,6 +484,7 @@ const fidelity = override.fidelity !== undefined ? !!override.fidelity : config(
 
   const file = outFile || dataPath('voice', `${Date.now()}.wav`)
   concatWav(chosen.map((c) => c.file), file, Number(v.chunkGapSec ?? 0.18))
+  pruneVoiceDir()
 
   for (const f of all.map((x) => x.path)) {
     if (chosen.some((c) => c.file === f) || f === file) continue

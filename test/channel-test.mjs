@@ -5,6 +5,7 @@
 //   ② 不同会话并行：A 慢不挡 B
 //   ③ 同会话连发合并：窗口内的多条合成一批，只回一次
 // 外加：TTL 丢弃、积压上限、异常不炸队列。
+import './_isolate.mjs'
 import assert from 'node:assert'
 import { UnifiedChannel } from '../tools/lib/channel.mjs'
 

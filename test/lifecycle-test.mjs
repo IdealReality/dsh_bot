@@ -2,6 +2,7 @@
 //
 // 回归的真事故：lib/index.js 里 4 个 setInterval 只 clear 了 2 个，
 // 插件热重载一次就有两份 mindTick 在跑、两份同时写记忆/发消息。
+import './_isolate.mjs'
 import assert from 'node:assert'
 import { every, clear, disposeAll, snapshot, stale } from '../tools/lib/lifecycle.mjs'
 

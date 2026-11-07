@@ -125,6 +125,13 @@ export function emit(input = {}) {
 /**
  * 取走所有还没消费的事件（每个分片一个行号游标）。
  * 只被 brain 的 ingest 调用；游标写回是原子的。
+ *
+ * 2026-11-08 两处成本修正：
+ *   ① 分片带 size 短路 —— 以前 brainTick（30s 一轮）对**每个**分片整份 readJsonl，
+ *      而分片按「进程+日期」命名、只增不减，一年就是几百个文件反复读。
+ *      现在文件自上次消费后 size 没变（已读到底）就整份跳过。
+ *   ② 消费完且超过 3 天的分片直接删（连游标文件一起）—— 事件早就进 ep 库了，
+ *      留着只是让 readdir/解析越来越慢。3 天窗口保证 brain 停摆一阵也不会丢。
  */
 export function consume({ max = 500 } = {}) {
   const out = []
@@ -132,20 +139,40 @@ export function consume({ max = 500 } = {}) {
   try {
     files = fs.readdirSync(inboxDir()).filter((f) => f.endsWith('.jsonl')).sort()
   } catch { return out }
+  const now = Date.now()
   for (const name of files) {
     const file = path.join(inboxDir(), name)
     const curFile = inboxCursor(file)
     const cur = readJson(curFile, { lines: 0 }) || { lines: 0 }
+    let st
+    try { st = fs.statSync(file) } catch { continue }
+    if (Number(cur.lines || 0) > 0 && Number(cur.size ?? -1) === st.size) {
+      pruneShard(file, curFile, st, now)
+      continue
+    }
     const rows = readJsonl(file)
     let lines = Number(cur.lines || 0)
     if (rows.length < lines) lines = 0     // 文件被轮转过
+    let consumedAll = true
     for (const r of rows.slice(lines)) {
-      if (out.length >= max) return out
+      if (out.length >= max) { consumedAll = false; break }
       out.push(r)
     }
-    if (rows.length !== lines) writeJsonAtomic(curFile, { lines: rows.length, at: Date.now() })
+    if (!consumedAll) return out          // 留游标不动，下一轮接着读
+    if (rows.length !== lines || Number(cur.size ?? -1) !== st.size) {
+      writeJsonAtomic(curFile, { lines: rows.length, size: st.size, at: Date.now() })
+    }
+    pruneShard(file, curFile, st, now)
   }
   return out
+}
+
+/** 消费完的分片留 3 天后删掉（含游标文件）。只看 mtime，不做别的判断。 */
+function pruneShard(file, curFile, st, now) {
+  if (now - st.mtimeMs < 3 * 24 * 3600_000) return false
+  try { fs.rmSync(file, { force: true }) } catch (e) { swallow(e, 'event:pruneShard'); return false }
+  try { fs.rmSync(curFile, { force: true }) } catch (e) { swallow(e, 'event:pruneShard:cursor') }
+  return true
 }
 
 /** 只数一数积压（doctor / metrics 用）。 */
