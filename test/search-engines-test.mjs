@@ -147,6 +147,14 @@ console.log('\n[多引擎编排]')
   // ⑦ 引擎错误被收集（而不是吞掉）
   const g = await S.searchEngines('任意', { get: () => Promise.reject(new Error('HTTP 503')) })
   ok('错误进 errors（weak 时才落日志）', g.errors.length >= 3 && g.errors[0].includes('503'), g.errors.join(' | ').slice(0, 120))
+
+  // ⑧ 调用方可以按自己的能力裁掉引擎（容器里没代理时 DDG 是黑洞，别白等超时）
+  const h = []
+  await S.searchEngines('菠萝包 轻小说', {
+    engines: ['360', 'bing'],
+    get: (url) => { h.push(url); return Promise.resolve(SO_MANY) },
+  })
+  ok('只打允许的引擎', h.length === 2 && !h.some((u) => u.includes('duckduckgo')), h.join(' | ').slice(0, 120))
 }
 
 console.log('\n[去重与排序]')

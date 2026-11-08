@@ -102,8 +102,12 @@ function htmlToText(html) {
  *  两层的分工不变：引擎被墙/改版时浏览器层还能读 SERP；但"读到了脏数据"不算成功。 */
 export async function searchSmart(kw) {
   kw = sanitizeText('search', kw)   // 出站硬脱敏（2026-11-03）：搜什么词也出得去
-  let results = await searchWeb(kw)
+  const detail = await searchWeb(kw)
+  let results = detail.results
   if (results.length) return results
+  // 引擎**答了**只是全不对题 → 换浏览器读同一个 SERP 也是白搭，别白起一次 chromium。
+  // 只有"试过的引擎全挂"（网络/风控）时，真浏览器才可能不一样。
+  if (!detail.tried.length || detail.errors.length < detail.tried.length) return results
   try {
     const { browserRead, browserDetach, hasChromium } = await import('../lib/browser.mjs')
     if (!hasChromium()) return results   // 没有浏览器：上面 fetch 到多少就是多少，别去 spawn
@@ -127,20 +131,22 @@ export async function searchSmart(kw) {
 }
 
 /** 搜索：多引擎 + 相关性打分（见 lib/search-engines.mjs）。
- *  返回 [{title, url, snippet, source, score}]。
- *  脏数据不再当结果 —— 引擎说"N 条"但一条都不含 query 的词，等于没搜到。 */
+ *  @returns {Promise<{results:Array<{title,url,snippet,source,score}>, weak:boolean, tried:string[], all:number, errors:string[]}>}
+ *  调用方要自己拿 `weak` 决定说不说"没搜到" —— 引擎说"N 条"但一条都不含 query 的词，等于没搜到。 */
 export async function searchWeb(kw) {
   kw = sanitizeText('search', kw)   // 出站硬脱敏（2026-11-03）
-  const out = await searchEngines(kw, { get: (url, opts) => httpGet(url, opts) })
+  // DDG 只在"有 curl 且配了代理"时才值得打：容器里两者都没有，直连 fetch 会卡到超时（实测 12s/次）。
+  const engines = HAS_CURL && PROXY() ? ['360', 'bing', 'ddg'] : ['360', 'bing']
+  const out = await searchEngines(kw, { get: (url, opts) => httpGet(url, opts), engines })
   if (out.weak) {
-    // 只有"最后真没结果"时才算失败；平时 360 一命中就不打 ddg，不该在日志里刷失败噪声。
+    // 只有"最后真没结果"时才算失败；引擎平时正常答话时不该在日志里刷失败噪声。
     for (const e of out.errors) logWeb('搜索失败', `${kw} · ${e}`)
     logWeb('搜索', `「${kw}」→ 全脏，0 条（试过 ${out.tried.join('/')}，抓回 ${out.all} 条全不对题）`)
   } else {
     const srcs = [...new Set(out.results.map((r) => r.source))].join('+')
     logWeb('搜索', `「${kw}」→ ${out.results.length} 条（${srcs}${out.results.some((r) => r.variant) ? '·变体' : ''}）`)
   }
-  return out.results
+  return out
 }
 
 /** 读网页正文（内外网皆可；先直连后代理） */

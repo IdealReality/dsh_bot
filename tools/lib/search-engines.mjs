@@ -197,11 +197,13 @@ function rank(items) {
  * @returns {Promise<{results:Array, weak:boolean, tried:string[], all:number, errors:string[]}>}
  *   weak=true 表示"引擎有话要说，但说的都不是你要问的" —— 调用方必须如实说"没搜到"，不许拿脏数据当答案。
  */
-export async function searchEngines(kw, { get } = {}) {
+export async function searchEngines(kw, { get, engines } = {}) {
   const q = String(kw || '').trim()
   if (!q) return { results: [], weak: true, tried: [], all: 0, errors: [] }
   if (typeof get !== 'function') throw new Error('searchEngines 需要注入 get()')
-  const ORDER = ['360', 'bing', 'ddg']
+  // engines 由调用方按**它自己的能力**给（比如容器里没 curl、没代理，DDG 就是黑洞：
+  // 直连 fetch 会一直卡到超时，实测把一次搜索从 2s 拉到 12s）。
+  const ORDER = (Array.isArray(engines) && engines.length ? engines : ['360', 'bing', 'ddg']).filter((n) => ENGINES[n])
   const errors = []
   let pool = []
 
