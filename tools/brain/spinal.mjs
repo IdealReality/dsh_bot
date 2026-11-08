@@ -11,7 +11,8 @@
 //
 // 器官缺席/异常永远不炸：每个读数独立 try，坏了就当没意见（llmState 家族契约）。
 import { swallow } from '../lib/swallow.mjs'
-import { asleep, sleepPressure } from './rhythm.mjs'
+import { sleepPressure } from './rhythm.mjs'
+import * as sleepstage from './organ/sleepstage.mjs'
 import { voiceReadiness, cognitiveDepth, patience, irritability } from './field.mjs'
 
 // 偏移量的钳位（±0.5）：最终温度的 clamp（0.35~1.05）由调用方做 —— spinal 只管身体偏了多少
@@ -60,8 +61,14 @@ export function spinalState(opts = {}) {
     out.note = out.note || '困得很，话会短、可能词不达意'
     out.sources.push('rhythm.sleepPressure')
   }
+  // 2026-11-08 修：这里原来写 `asleep(now) === true`，而 rhythm.asleep() 是
+  // **记一次入睡的写操作**（returns save(st)，永远不是 true）。两个后果：
+  //   ① 每读一次表达读数就往 rhythm.json 追加一条假 'sleep'，还把 lastSleep 重置成 now
+  //      → 真醒来时 awake() 算出 "睡了 0.01 小时"（rhythm.json 里实测就是这么记的）
+  //   ② `=== true` 恒为 false，所以"半梦半醒"这条永远不触发
+  // 现在改成读 sleepstage 的真实生理状态（inSleep），纯读不写。
   let asleepNow = false
-  try { asleepNow = asleep(now) === true } catch { asleepNow = false }
+  try { asleepNow = sleepstage.snapshot(now).inSleep === true } catch { asleepNow = false }
   if (asleepNow) {
     out.temperature -= 0.15
     out.note = '半梦半醒被叫起来的含糊劲儿'

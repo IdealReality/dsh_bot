@@ -530,6 +530,31 @@ export function driftSet(dim, delta, cap = 0.25) {
   }) || null
 }
 
+/**
+ * 还债时间常数（小时）。**这两个数字必须和累积速率一起看**，单独调任何一个都会坏。
+ *
+ * 2026-11-08 修（用户："大肥鱼一直表达的都非常累"）。旧值 9.4 的算式：
+ *   · 清醒累积（organ/heartbeat.accrueSleepDebt）：白天 0.02/h、深夜 23~6 点 0.05/h
+ *     → 典型一天（17h 醒着 + 7h 深夜）欠 0.34 + 0.35 = **0.69**
+ *   · 真睡一次最多 effectiveH = 6.84h（sleepstage 按 480min × 0.855 效率结算）
+ *     → 旧 tau=9.4 时一夜只清掉 1-exp(-6.84/9.4) = **48%**
+ *   · sleepDebt 上限 1.0 → 每天欠 0.69、每晚最多清掉当前值的一半，
+ *     不动点解出来是「醒来 0.48 / 睡前 1.0」：**她一辈子都卡在 0.45 那条线以上**。
+ *
+ * 后果：assemble 的 feel 块**每一轮**都是「身体：感觉缺觉，脑子发钝。」
+ * 实测（field.json）：2026-11-08 07:48 醒（d_pre=0.916 → d_post=0.443），
+ * 到 19:57 累积到 0.687。用真实睡眠时刻表（sleep.json.history）做 8 周期仿真：
+ * 清醒时段里「缺觉，脑子发钝」占 **86.9%**；tau 换成 3.2 后降到 **约 24%**
+ * —— 剩下那部分是真实熬了 20h+ 的长段，本来就该困。
+ *
+ * 取值依据：一夜（6.84h 有效睡眠）清掉 ~88%，醒来 0.08~0.12 →
+ * sense() 走「身上是轻的，脑子也转得动」；熬满 16h 到 0.4 左右（有点困但不难受）；
+ * 连熬 24h 以上才到 0.9（night.mjs 的 hardFloor 0.92 才有意义）。
+ */
+const SLEEP_REPAIR_TAU_H = 3.2
+/** 疲劳的时间常数。比睡眠债快，同样按小时算（疲劳的累积来自器官 poke，不在这里校准）。 */
+const FATIGUE_REPAIR_TAU_H = 5.5
+
 /** 还债：只有真睡才调。还按「睡多久」算，不是「睡了一次」。 */
 export function repaySleep(hours = 0, now = Date.now()) {
   const h = Math.max(0, Number(hours) || 0)
@@ -538,10 +563,10 @@ export function repaySleep(hours = 0, now = Date.now()) {
   // 旧实现会把对方刚 poke 的扰动整个抹掉。
   return mutateJson(fieldPath(), empty(), (cur) => {
     const st = evolve(now, hydrate(cur))
-    // 一晚上按 8 小时能清掉约 0.85 的债（不是清空：睡眠本来就不是万能的）
-    st.dims.sleepDebt = clamp(st.dims.sleepDebt * Math.exp(-h / 9.4), DIMS.sleepDebt.lo, DIMS.sleepDebt.hi)
+    // 一晚上按 8 小时能清掉约 0.88 的债（不是清空：睡眠本来就不是万能的）
+    st.dims.sleepDebt = clamp(st.dims.sleepDebt * Math.exp(-h / SLEEP_REPAIR_TAU_H), DIMS.sleepDebt.lo, DIMS.sleepDebt.hi)
     // 疲劳的清除比睡眠债快得多，但它同样按小时算
-    st.dims.fatigue = clamp(st.dims.fatigue * Math.exp(-h / 5.5), DIMS.fatigue.lo, DIMS.fatigue.hi)
+    st.dims.fatigue = clamp(st.dims.fatigue * Math.exp(-h / FATIGUE_REPAIR_TAU_H), DIMS.fatigue.lo, DIMS.fatigue.hi)
     st.at = now
     st.log = [...(st.log || []), { at: now, dim: 'sleep', delta: -h, why: '睡了 ' + h.toFixed(1) + ' 小时' }].slice(-60)
     return { at: st.at, pool: st.pool || null, dims: st.dims, drift: st.drift, log: (st.log || []).slice(-60) }
