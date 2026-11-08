@@ -243,6 +243,7 @@ export function tick(now = Date.now()) {
     st.activity = decay(st.activity, dtMin)
     st.at = t
     if (!st.lastInputAt) st.lastInputAt = t
+    if (!st.since) st.since = t          // 首次落盘：档位从此刻开始算（否则面板显示 1970）
     st.lastDebt = Number((b.debt || 0).toFixed(4))
     st.lastFatigue = Number((b.fatigue || 0).toFixed(4))
     const idleMin = (t - Number(st.lastInputAt)) / MIN

@@ -81,7 +81,7 @@ sleep ──(night.endSleep / 看门狗结算 / tick 兜底)──▶ awake（�
 
 ## 验证
 
-- 新测试 `test/brain-wakefulness-test.mjs`：**32 项断言全绿**（EXIT=0）
+- 新测试 `test/brain-wakefulness-test.mjs`：**31 项断言全绿**（EXIT=0）
 - 判别力（反向验证，可归因）：把 `dozeAt→1.0`、`dozeRepayFactor→0`、`wakeLevel→0.2` 后跑同一套
   → **4 项红、EXIT=1**；恢复后 EXIT=0
 - 高压探针（临时，跑完删）：时钟回拨 / 坏 JSON / 真睡镜像 / debt=1 忙 / NaN 入参 / 心跳 beat 集成 /
