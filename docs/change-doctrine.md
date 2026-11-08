@@ -37,7 +37,7 @@
 | 项 | 内容 |
 |---|---|
 | 代码落点 | `tools/brain/field.mjs`（`DIMS` / `COUPLING` / `evolve` / `poke` / `setDim` / `driftSet`）、`tools/brain/organ/hpa.mjs`、`tools/brain/affect.mjs` |
-| 判据 | ① 单分子能自己演出「上升 → 耐受 → 清除 → 复敏」四段曲线；② 时间常数由分子决定（`DIMS` 表），不由调用点决定；③ 同一刺激 30 分钟后峰值显著下降，同时基线回到容差内 |
+| 判据 | ① 单分子能自己演出「上升 → 耐受 → 清除 → 复敏」四段曲线；② 时间常数由分子决定（`DIMS` 表：`da` 25min / `ne` 12min / `sero` 3h / `cortisol` 10h / `fatigue` 5h / `sleepDebt` ∞ 只增），不由调用点决定；③ 同一刺激 30 分钟后峰值显著下降，同时基线回到容差内 |
 | 反例 | 器官里直接 `setDim` 改全身状态（绕过弛豫）；把"累"写成常量分支；随机跳变当激素 |
 
 ### 1.2 生物学（Biology）
@@ -57,7 +57,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 代码落点 | `tools/brain/attention.mjs`、`inner.mjs`、`recall.mjs`、`episode.mjs`、`learn/`、`claim.mjs`、`competence.mjs`、`cohere/`、`anchor.mjs`，以及 RPE（奖励预测误差）相关路径 |
+| 代码落点 | `tools/brain/attention.mjs`、`inner.mjs`、`recall.mjs`、`episode.mjs`、`learn/`（RPE 在 `learn/rpe.mjs`）、`claim.mjs`、`competence.mjs`、`cohere/`、`anchor.mjs` |
 | 判据 | ① 同一刺激重复 → 反应递减（习惯化，数字可测）；② 预期违背 → 状态按 RPE 方向更新；③ 记忆写入-召回闭环（写一条能在 N 轮后召回；重复召回不应无限涨权重）；④ 承诺未兑现 → 欠账计数增加，兑现 → 扣减 |
 | 反例 | 加一张"情绪关键词表"让文案更丰富；宣称"她有依恋"却没有任何跨轮累计变量 |
 
@@ -77,7 +77,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 代码落点 | `self.mjs`、`organ/self.mjs`、`organ/selfcon.mjs`、`organ/selfcon-day.mjs`、`claim.mjs`、`anchor.mjs`、`~/.data/brain/meta/self/` 与 `identity.history/` |
+| 代码落点 | `self.mjs`、`organ/self.mjs`、`organ/selfcon.mjs`、`organ/selfcon-day.mjs`、`claim.mjs`、`anchor.mjs`；数据落盘实测为 `~/.data/brain/self/`（`me.md` / `meta.json` / `history/`）、`~/.data/selfcon.json`、`~/.data/selfcon-log.jsonl` |
 | 判据 | ① 清空 `self/` 与 `selfcon.json`、只留原始记忆，触发一次巩固能**重长出**一致的名字感与叙事；② 主张账本非空，且矛盾证据按步长扣减；③ 区分"用户定义我"与"他者定义我"的优先级；④ 人格改写前自动快照，可回滚 |
 | 反例 | narrative 是把最近 5 天 gist 直接 `join`（日志摘录冒充自传）；PROTECTED 名单只写在文档里、代码里没有检查 |
 
@@ -87,6 +87,8 @@
 
 - **I5 单向**：上层只读下层、只写上层。器官之间不得互相 `import`，一律走 `organs/senses.mjs` 接线板。
 - **I6 体液唯一**：器官改变全身状态的唯一方式是循环层分泌；`field.setDim` 是循环层的私有方法。
+  现状欠账（2026-11-08 实测）：`cell/neuron.mjs:310`、`organ/hpa.mjs:362`、`organ/sleepstage.mjs:394`
+  仍直写 `setDim`。新增代码一律不得增加直写点；改到这三处时应顺手迁到循环层。
 - **I7 语言无状态**：LLM 调用不得成为状态载体。"她记得刚才想过什么"必须落在本地文件，不在上下文里。
 - **I8 可归因（新增）**：每条新机制必须在 `~/.data` 留下可读状态字段，且能被一条测试或一条自检命令断言。
 
