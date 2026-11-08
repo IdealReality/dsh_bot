@@ -78,6 +78,7 @@ const TESTS = [
   'tts-reftext-test.mjs',
   'voice-emotion-test.mjs',
   'web-shell-test.mjs',  'browser-engine-test.mjs',   // 内置浏览器引擎：双设备/SSRF/CDP/实机渲染（2026-11-02）
+  'search-engines-test.mjs',  // 搜索引擎层（2026-11-08）：360 data-mdurl / bing 首词退化必须判脏 / 变体重试上限
   'recall-push-test.mjs',
   'imggen-test.mjs',
   'vision-test.mjs',

@@ -304,7 +304,15 @@ export async function runTool(name, args = {}) {
         }
         const r = await runCli(['web', 'search', q], 90000)
         if (!r.ok) return { ok: false, result: `上网没成：${(r.err || r.out || '').slice(0, 200)}` }
-        return { ok: true, result: String(r.out || '').slice(0, 1800) }
+        const text = String(r.out || '').slice(0, 2400)
+        // 工具要交代"接下来怎么用"（同 bili_search 的教训）：搜到不给她说清楚，
+        // 她会回"我去找找"或者把标题念一遍就当答完了。
+        return {
+          ok: true,
+          result: text.includes('没搜到对题')
+            ? text
+            : text + '\n（挑 1~2 条最对题的，把标题和站点名说给他；要看正文就用 browse_page 读那条链接，别把搜索列表直接当答案念。）',
+        }
       }
 
       case 'bili_search': {

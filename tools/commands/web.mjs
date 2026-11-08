@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url'
 import { config } from '../lib/config.mjs'
 import * as llm from '../lib/llm.mjs'
 import { sanitizeText } from '../lib/sanitize.mjs'
+import { searchEngines, scoreItem, RELEVANT } from '../lib/search-engines.mjs'
 import { dataPath, homePath, WORK_DIR } from '../lib/paths.mjs'
 import { acquire } from '../lib/lock.mjs'
 import { swallow } from '../lib/swallow.mjs'
@@ -35,10 +36,12 @@ const HAS_CURL = (() => {
 })()
 const HTTP_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
 
-/** 异步取文本：fetch 优先（容器唯一可用路径），curl 兜底（本地/需要代理时）。 */
+/** 异步取文本：fetch 优先（容器唯一可用路径），curl 兜底（本地/需要代理时）。
+ *  fetch 失败**重试一次**：undici 的连接池会复用被对端悄悄关掉的闲置 socket，
+ *  长驻进程（roam 就在 bot.mjs 里跑）第一次请求经常直接 "fetch failed" —— 见 lib/fetch-bytes.mjs 的同类记载。 */
 async function httpGet(url, { proxy = false, timeout = 30000, headers = {} } = {}) {
   if (proxy && HAS_CURL && PROXY()) return curlGet(url, { proxy: true, timeout })
-  try {
+  const once = async () => {
     const r = await fetch(url, {
       headers: { 'user-agent': HTTP_UA, 'accept-language': 'zh-CN,zh;q=0.9', ...headers },
       redirect: 'follow',
@@ -46,9 +49,14 @@ async function httpGet(url, { proxy = false, timeout = 30000, headers = {} } = {
     })
     if (!r.ok) throw new Error('HTTP ' + r.status)
     return await r.text()
+  }
+  try {
+    return await once()
   } catch (e) {
     if (HAS_CURL) return curlGet(url, { proxy, timeout })
-    throw e
+    if (e?.name === 'AbortError' || /HTTP 4\d\d/.test(String(e?.message))) throw e   // 超时/被拒：重试也没用
+    await new Promise((r) => setTimeout(r, 250))
+    return await once()   // 坏 socket 已被 undici 摘掉，这一次走新连接
   }
 }
 
@@ -90,7 +98,8 @@ function htmlToText(html) {
     .trim()
 }
 
-/** 搜索三级链：RSS(curl) → 内置浏览器开 SERP → DDG(curl)。RSS 被封/改版时浏览器层能过风控。 */
+/** 搜索链：多引擎（引擎层）→ 内置浏览器开 SERP（360，过风控）→ 顶层浏览器结果也要过相关性关。
+ *  两层的分工不变：引擎被墙/改版时浏览器层还能读 SERP；但"读到了脏数据"不算成功。 */
 export async function searchSmart(kw) {
   kw = sanitizeText('search', kw)   // 出站硬脱敏（2026-11-03）：搜什么词也出得去
   let results = await searchWeb(kw)
@@ -98,11 +107,18 @@ export async function searchSmart(kw) {
   try {
     const { browserRead, browserDetach, hasChromium } = await import('../lib/browser.mjs')
     if (!hasChromium()) return results   // 没有浏览器：上面 fetch 到多少就是多少，别去 spawn
-    const p = await browserRead(`https://cn.bing.com/search?q=${encodeURIComponent(kw)}`, { waitMs: 6000, maxChars: 3000, links: true })
-    for (const l of (p.links || []).slice(0, 14)) {
-      if (!/^https?:/.test(l.href) || /bing\.com|microsoft\.com/i.test(l.href)) continue
-      results.push({ title: String(l.text || '').slice(0, 80), url: l.href, snippet: '(经内置浏览器 SERP 读取，正文用 browse_page 读)' })
-      if (results.length >= 10) break
+    const p = await browserRead(`https://www.so.com/s?q=${encodeURIComponent(kw)}`, { waitMs: 6000, maxChars: 3000, links: true })
+    const cand = []
+    for (const l of (p.links || []).slice(0, 30)) {
+      if (!/^https?:/.test(l.href) || /so\.com|360\.com|360kan|bing\.com|microsoft\.com/i.test(l.href)) continue
+      const item = { title: String(l.text || '').slice(0, 80), url: l.href, snippet: '(经内置浏览器 SERP 读取，正文用 browse_page 读)' }
+      if (scoreItem(kw, item) < RELEVANT) continue
+      cand.push(item)
+      if (cand.length >= 10) break
+    }
+    if (cand.length) {
+      results = cand
+      logWeb('搜索', `「${kw}」→ ${cand.length} 条（内置浏览器 SERP）`)
     }
   } catch (e) { swallow(e, 'web:searchBrowser') } finally {
     try { const m2 = await import('../lib/browser.mjs'); await m2.browserDetach() } catch (e2) { swallow(e2, 'web:searchDetach') }
@@ -110,39 +126,21 @@ export async function searchSmart(kw) {
   return results
 }
 
-/** 搜索：Bing 国内直连优先，0 结果/失败走 DDG（代理）。返回 [{title, url, snippet}] */
+/** 搜索：多引擎 + 相关性打分（见 lib/search-engines.mjs）。
+ *  返回 [{title, url, snippet, source, score}]。
+ *  脏数据不再当结果 —— 引擎说"N 条"但一条都不含 query 的词，等于没搜到。 */
 export async function searchWeb(kw) {
   kw = sanitizeText('search', kw)   // 出站硬脱敏（2026-11-03）
-  const results = []
-  try {
-    // ✗ 别加 &count=15（10-27 实测）：带上这个参数，cn.bing.com 会返回一批**跟关键词完全无关**
-    //   的结果（问"稻花香大米口感"给我淘宝和屏幕亮度），看着是"搜到了"，其实全是脏数据。
-    //   去掉之后同一个问题前三条就命中"稻花香集团官方网站"。宁可少抓，不要脏抓。
-    const html = await httpGet(`https://cn.bing.com/search?q=${encodeURIComponent(kw)}&format=rss`)
-    // 2026-11-03：HTML 版 SERP 混广告位（10-27 &count=15 脏数据事件的根源），改 RSS 版 —— 纯 <item> 结构，天然没广告
-    for (const it of html.match(/<item>[\s\S]*?<\/item>/g) || []) {
-      const title = htmlToText((it.match(/<title>([\s\S]*?)<\/title>/) || [])[1] || '')
-      const link = String((it.match(/<link>([\s\S]*?)<\/link>/) || [])[1] || '').trim()
-      const snip = htmlToText((it.match(/<description>([\s\S]*?)<\/description>/) || [])[1] || '')
-      if (title && /^https?:\/\//.test(link)) results.push({ title: title.slice(0, 80), url: link, snippet: snip.slice(0, 150) })
-      if (results.length >= 12) break
-    }
-  } catch (e) { swallow(e, 'web:searchWeb') }
-  if (!results.length) {
-    try {
-      const html = await httpGet(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(kw)}`, { proxy: true })
-      const re = /<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g
-      let m
-      while ((m = re.exec(html)) && results.length < 10) {
-        let url = m[1]
-        const uddg = url.match(/uddg=([^&]+)/)
-        if (uddg) url = decodeURIComponent(uddg[1])
-        results.push({ title: htmlToText(m[2]).slice(0, 80), url, snippet: htmlToText(m[3]).slice(0, 150) })
-      }
-    } catch (e) { swallow(e, 'web:searchWeb') }
+  const out = await searchEngines(kw, { get: (url, opts) => httpGet(url, opts) })
+  if (out.weak) {
+    // 只有"最后真没结果"时才算失败；平时 360 一命中就不打 ddg，不该在日志里刷失败噪声。
+    for (const e of out.errors) logWeb('搜索失败', `${kw} · ${e}`)
+    logWeb('搜索', `「${kw}」→ 全脏，0 条（试过 ${out.tried.join('/')}，抓回 ${out.all} 条全不对题）`)
+  } else {
+    const srcs = [...new Set(out.results.map((r) => r.source))].join('+')
+    logWeb('搜索', `「${kw}」→ ${out.results.length} 条（${srcs}${out.results.some((r) => r.variant) ? '·变体' : ''}）`)
   }
-  logWeb('搜索', `「${kw}」→ ${results.length} 条结果`)
-  return results
+  return out.results
 }
 
 /** 读网页正文（内外网皆可；先直连后代理） */
@@ -351,9 +349,16 @@ export async function run(argv = []) {
     const kw = argv.slice(1).join(' ').trim()
     if (!kw) { console.log('用法：web search "关键词"'); return }
     const rs = await searchSmart(kw)
-    if (!rs.length) { console.log('（没搜到结果）'); return }
+    if (!rs.length) {
+      console.log(`「${kw}」没搜到对题的结果：各引擎抓回来的页面里没有一条真跟你问的对得上。`
+        + '\n（换个更具体的说法再搜一次；还是不行就直说不知道，别拿不相关的东西凑答案。）')
+      return
+    }
     console.log(`「${kw}」的搜索结果（${rs.length} 条）：`)
-    for (const [i, r] of rs.entries()) console.log(`${i + 1}. ${r.title}\n   ${r.url}\n   ${r.snippet}`)
+    for (const [i, r] of rs.entries()) {
+      const snip = String(r.snippet || '').replace(/\s+/g, ' ').slice(0, 110)
+      console.log(`${i + 1}. ${r.title}\n   ${r.url}${snip ? '\n   ' + snip : ''}`)
+    }
     return
   }
 
