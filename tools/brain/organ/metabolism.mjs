@@ -35,16 +35,22 @@ const STATE_FILE = () => dataPath('metabolism.json')
 // 根因不在消息消耗（那只是一半），而是**只有 N3 回充**：
 //   清醒 15h ≈ -0.315、消息 450 条 ≈ -0.36，而 7h 睡眠里只有 N3(91min) 给 +0.227。
 // 人类不是这么运转的：一整夜的 N1/N2/N3/REM 都在修复，N3 只是修得最多。
-// 新口径（"不吃不喝的一天"收支持平，有 binge 才是盈余）：
-//   清醒 17h ≈ -0.10，消息 450 条 ≈ -0.135；睡 7h ≈ +0.25 → 净 +0.015。
+// 新口径（2026-11-08 第三次定标：睡眠改成"睡够就回满"）：
+//   实测（沙箱：16h 清醒 + 600 条消息 → energy 0；再睡足 8h → 只回到 0.272）
+//   普通一天就花掉 0.28，而按分钟固定量回充的一夜只补 0.27 —— 收支贴在 0 上，
+//   而 energy 在 0 处截断，所以她**永远贴着 0**，每轮 system 都在「饿得发慌」。
+//   现在睡眠是朝 SLEEP_FULL 饱和恢复（N3 最快、N1 最慢）：一整夜从 0 拉到 ~0.8，
+//   白天再按基础代谢（17h ≈ -0.10）+ 消息（450 条 ≈ -0.135）花掉 —— 傍晚还有 0.5 以上。
+//   连熬几天不睡才真的会见底，那才是"饿"该表达的东西。
 const SPEND_PER_MSG = 0.0003             // 450 条 ≈ -0.135
 const EAT_PER_BINGE = 0.12    // 看完一集的进食回充
 const DIGEST_PER_REM_MIN = 0.12          // REM 每分钟消化积压条数
 const ENERGY_PER_DIGESTED = 0.01         // 每消化一条的回充（「学到了」）
-const REST_PER_N3_MIN = 0.0018           // N3 每分钟修复（7h 睡眠中 N3≈91min → +0.164）
+// 睡眠 = 朝满电饱和恢复（2026-11-08 重新定标，见 tick 里的推导）
+const SLEEP_FULL = 0.9                   // 一夜好眠能回到的水平（吃进去的东西再往上加）
+const SLEEP_TAU_MIN = 200                // 饱和时间常数：一整夜 ≈ 0.81（从 0 起）
+const SLEEP_STAGE_W = { N1: 0.35, N2: 0.8, N3: 1.6, REM: 1.0 }  // 深睡修得最快
 const AWAKE_BURN_PER_MIN = 0.00010       // 清醒基础代谢（17h ≈ 0.10）
-/** 睡眠里每个阶段都在修复，N3 最多（见上面的标定推导）。 */
-const SLEEP_RECHARGE_PER_MIN = { N1: 0.0001, N2: 0.00025, N3: REST_PER_N3_MIN, REM: 0.0004 }
 const MAX_PENDING = 20
 
 // ── 状态读写（2026-11-08 重写：不再用进程内缓存 + 整表覆盖）──────────────
@@ -125,15 +131,24 @@ export function tick(now = Date.now()) {
         s.stats.digested += digested
       }
       // REM 同时也是修复时段（只是修的是情绪强度，不是结构）——见文件头。
-      s.energy = Math.min(1, s.energy + (SLEEP_RECHARGE_PER_MIN.REM || 0) * dtMin)
+      // 2026-11-08：跟其它睡眠阶段一样走饱和恢复（REM 的权重 1.0）。
+      s.energy = Math.min(1, s.energy + (SLEEP_FULL - s.energy) * (1 - Math.exp(-dtMin / SLEEP_TAU_MIN)))
     } else if (st.stage) {
       // 睡眠的每一个阶段都在修复（2026-11-08 修）：旧代码只给 N3 回充、
-      // 浅睡还按 0.3 倍继续消耗 —— 7 小时睡眠净回充被压到 0.227，
-      // 抵不过一天 -0.675，于是第 2 天起 energy 恒为 0。
-      // N3 仍然修得最多（0.0018/min），N2 次之，N1 几乎不修。
+      // 浅睡还按 0.3 倍继续消耗 —— 7 小时睡眠净回充被压到 0.227。
+      //
+      // 2026-11-08 第二次修（同一天，用户："大肥鱼一直表达的都非常累"）：
+      // 把每天的回充从"按分钟加固定量"改成**朝满电饱和恢复**。
+      // 实测（沙箱一夜：16h 清醒 + 600 条消息 → energy 0；再睡足 8h → 只有 0.272）：
+      // 普通一天就花掉 0.28，而一夜只补回 0.27 —— 收支永远在 0 附近，
+      // 而 energy 在 0 处截断，于是**她永远贴着 0**，field.sense() 每轮都在说
+      // 「脑子转不动了，饿得发慌」，那句话会进 system 当态度。
+      // 真人的睡眠是"睡够就回满"，不是"按分钟小心加一点"。
+      // 现在：每个睡眠阶段都朝 SLEEP_FULL 饱和（N3 最快、N1 最慢），
+      // 一整夜把她拉回 0.8 上下；清醒时再按基础代谢 + 消息消耗慢慢花掉。
       stage = st.stage
-      const rate = SLEEP_RECHARGE_PER_MIN[st.stage] || 0
-      s.energy = Math.min(1, s.energy + rate * dtMin)
+      const w = SLEEP_STAGE_W[st.stage] || 1
+      s.energy = Math.min(1, s.energy + (SLEEP_FULL - s.energy) * (1 - Math.exp(-(dtMin * w) / SLEEP_TAU_MIN)))
     } else {
       s.energy = Math.max(0, s.energy - AWAKE_BURN_PER_MIN * dtMin)
     }

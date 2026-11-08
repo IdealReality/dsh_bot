@@ -81,10 +81,24 @@ try { asleepNow = asleep(now) === true } catch { ... }   // asleep 来自 rhythm
 修法：改读 `sleepstage.snapshot(now).inSleep`（纯读）；数据用 `sleep.json.history` 重建
 （备份 `rhythm.json.bak-20261108-spinalfix`）。
 
-## 五、验证
+## 五、第三个同类 bug：代谢电量永远贴着 0（"饿得发慌"每轮都进 system）
 
-新增 `test/brain-sleep-debt-test.mjs`（已注册进 `tools/run-tests.mjs`），13 项全绿；
-**换回旧实现会红 8 项**（睡眠债）/**2 项**（spinal 写盘），回归方向是钉死的：
+修完睡眠债之后，`field.sense()` 变成「感觉有点欠觉；**脑子转不动了，饿得发慌**。」
+后者来自 `organ/metabolism.mjs`：`energy` 实测为 **0**（`stats.messages 615 / binges 0`）。
+
+实测（沙箱，真实 sleepstage 分期）：16h 清醒 + 600 条消息 → energy 从 0.05 掉到 **0**；
+再睡足 8h → 只回到 **0.272**。也就是"一天花 0.28、一夜补 0.27"——
+收支贴在 0 上，而 energy 在 0 处截断，于是她**永远见底**，每轮都在说"饿得发慌"。
+
+修法：睡眠从"按分钟加固定量"改成**朝满电饱和恢复**（`SLEEP_FULL 0.9`、`SLEEP_TAU_MIN 200`，
+阶段权重 N1 0.35 / N2 0.8 / N3 1.6 / REM 1.0）。修后沙箱 3 天稳态：
+傍晚 0.62 / 醒来 0.87，`sense()` 为空；一夜从 0.02 回到 **0.815**。
+live 校正：`energy 0 → 0.75`（新口径下此刻该在的位置），备份随 `recalibrate` 落 `recalibrated` 标记。
+
+## 六、验证
+
+新增 `test/brain-sleep-debt-test.mjs`（已注册进 `tools/run-tests.mjs`），**16 项全绿**；
+换回旧实现会红 8 项（睡眠债）/ 2 项（spinal 写盘）/ 2 项（代谢回充），回归方向是钉死的：
 
 ```
 ① 一夜 6.84h 后：起点 0.5 → 0.059 / 0.92 → 0.109 / 1.0 → 0.118   （旧：0.242 / 0.444 / 0.483）
@@ -93,6 +107,7 @@ try { asleepNow = asleep(now) === true } catch { ... }   // asleep 来自 rhythm
 ④ 睡醒后 sense() = 「感觉身上没什么乏的，还算清爽。」（旧：「感觉缺觉，脑子发钝。」）
 ⑤ spinalState 连调 3 次，rhythm.json 一个字节不变；真睡着时报「半梦半醒」
 ⑥ debt=0.7 单独判定该睡（score=25），debt=0.44 不触发（score=16）
+⑦ 见底时 sense 说「饿得发慌」；一夜 8h → energy 0.815，醒来 sense 为空
 ```
 
 生产生效：`bot.mjs qq-server` 重启（PID 227710 → 228190），心跳/装配/结算全在新代码上；

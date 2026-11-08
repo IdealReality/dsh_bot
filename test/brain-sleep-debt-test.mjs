@@ -121,5 +121,21 @@ ok('债到 0.7 时单独判定该睡', sleepCan(0.7).shouldSleep === true, `scor
 ok('正常一天的债（0.44）不触发睡眠', sleepCan(0.44).shouldSleep === false, `score=${sleepCan(0.44).score}`)
 ok('债务线在 sense 阈值之上（不会白天就想睡）', night.RULES.debtSleepAt > TIRED, `debtSleepAt=${night.RULES.debtSleepAt}`)
 
+/* ── ⑦ 一夜睡眠也得把"电量"拉回来（否则同样每轮"饿得发慌"）────────── */
+// 同一类饱和 bug：旧口径一夜只回 +0.27，普通一天花掉 0.28 → energy 永远贴着 0，
+// field.sense() 每轮都在说「脑子转不动了，饿得发慌」，那句话进 system 就是态度。
+console.log('\n⑦ 代谢：一夜回满 vs 见底')
+const met = await import('../tools/brain/organ/metabolism.mjs')
+fs.writeFileSync(path.join(tmp, 'metabolism.json'), JSON.stringify({
+  energy: 0.02, pendingDigest: 0, lastTickAt: base, stats: { messages: 0, binges: 0, digested: 0 },
+}))
+ok('见底时 sense 说饿', /饿得发慌/.test(String(met.sense())), met.sense())
+let tm = base
+sleepstage.sleep(base)
+for (let i = 0; i < 8 * 60; i++) { tm += 60_000; met.tick(tm) }
+const energy = Number(met.snapshot().energy)
+ok('一夜（8h）把电量拉到 0.7 以上', energy >= 0.7, `energy=${energy}`)
+ok('醒来后 sense 不再说饿', !/饿得发慌|有点饿/.test(String(met.sense())), String(met.sense()) || '(空)')
+
 console.log(bad ? `\n✗ ${bad} 项失败` : '\n全部通过')
 process.exit(bad ? 1 : 0)
