@@ -69,11 +69,12 @@ sleep ──(night.endSleep / 看门狗结算 / tick 兜底)──▶ awake（�
 
 | 文件 | 改动 |
 |---|---|
-| `tools/brain/organ/wakefulness.mjs` | 新器官：`tick` / `touch` / `onWake` / `sense` / `snapshot` / `isDoze` / `levelOf` / `RULES` |
-| `tools/brain/organ/heartbeat.mjs` | 每拍 `wake.tick`；假睡还债（5 分钟一档）；`dozeTidy` 派活；假睡时账按 0.25 倍累积 |
-| `tools/lib/body.mjs` | `vitals.dozeTidy`（只跑 `nightwork tidy`）；`syncFocus` 里把自主行动记为工作量（`rest` 不算） |
-| `tools/brain/organ/night.mjs` | `endSleep` 调 `wake.onWake`（睡醒即阶跃） |
-| `tools/brain/organ/self.mjs` | 假睡层：`rest`，不让 watch/write 参赛；假睡不续期旧计划、不调 lean LLM |
+| `tools/brain/organ/wakefulness.mjs` | 新器官：`tick(now,{inSleep})` / `touch` / `onWake` / `markTidy` / `sense` / `snapshot` / `isDoze` / `levelOf` / `RULES` |
+| `tools/brain/organ/heartbeat.mjs` | 每拍读 `sleepstage.inSleep` **传参**给 `wake.tick`；假睡还债（5 分钟一档）；`dozeTidy` 派活成功才 `wake.markTidy`；看门狗唤醒后补 `wake.onWake`；`self.decide({dozing})` |
+| `tools/lib/body.mjs` | `vitals.dozeTidy`（只跑 `nightwork tidy`，**返回是否真派出去**）；`syncFocus` 里把自主行动记为工作量（`rest` 不算） |
+| `tools/brain/organ/night.mjs` | **不再 import wakefulness**：`endSleep` 只结算；阶跃由调用方补 |
+| `tools/commands/sleep.mjs` | `endSleep` 之后调 `wake.onWake`（睡醒即阶跃的编排层调用点） |
+| `tools/brain/organ/self.mjs` | 假睡层改为读**入参** `o.dozing`（不再 import wakefulness）：`rest`，不让 watch/write 参赛、不续期旧计划、不调 lean LLM |
 | `tools/brain/organs/senses.mjs` | 清醒度作为**第一项**身体感（在正面兜底之前，防止半睡被说成"身上是轻的"） |
 | `tools/commands/qq-server.mjs` | 入站消息 `wake.touch('message')`（假睡被叫醒的唯一入口） |
 | `tools/commands/brain.mjs` | `brain stats` 输出 `wakefulness` 全貌 |
@@ -81,13 +82,24 @@ sleep ──(night.endSleep / 看门狗结算 / tick 兜底)──▶ awake（�
 
 ## 验证
 
-- 新测试 `test/brain-wakefulness-test.mjs`：**31 项断言全绿**（EXIT=0）
+- 新测试 `test/brain-wakefulness-test.mjs`：**37 项断言全绿**（EXIT=0）
 - 判别力（反向验证，可归因）：把 `dozeAt→1.0`、`dozeRepayFactor→0`、`wakeLevel→0.2` 后跑同一套
   → **4 项红、EXIT=1**；恢复后 EXIT=0
 - 高压探针（临时，跑完删）：时钟回拨 / 坏 JSON / 真睡镜像 / debt=1 忙 / NaN 入参 / 心跳 beat 集成 /
   10 进程 × 30 次并发 touch —— 全过，并发后状态结构完好
 - 门禁 `scripts/check.mjs`：384 文件全绿（顺手把 `lib/index.js` 压回 1230 行上限内、`qq-server` 的接线压成 2 行）
 - 全套 `node tools/run-tests.mjs`：**115 套通过**
+
+## 验收整改（2026-11-08，按五维宪章走查后补的）
+
+| 缺口 | 整改 | 证据 |
+|---|---|---|
+| 哲学维只有代码没有判据 | `self.decide` 的两层否决补断言：醒着时旧计划续期、假睡时返回 `rest` 且 `kept=false` | 测试 ⑩ 三项全绿 |
+| 心理维只测了忙侧 | 补“闲下来才说乏劲”的断言 | 测试 ⑧ `/乏劲/` |
+| 主观维没测“词组不带数字” | 补“sense 不含数字（闲/忙/半睡三态）” | 测试 ⑧ 第四项 |
+| 化学维没测 NE 脉冲真的落进 field | 补“消息 → field.ne 抬升 ≥0.08” | 测试 ⑨（0.300 → 0.420） |
+| **I5：wake→sleepstage / night→wake / self→wake 三条器官互 import** | 全部消除：`tick` 收 `{inSleep}` 参数、`self.decide` 收 `{dozing}`、阶跃改由 `sleep.mjs` 与 `heartbeat` 调用 | `grep '^import'`：wakefulness 只剩 json/paths/swallow/field |
+| `dozeTidy` 被 `isBusy` 挡掉时 `lastTidyAt` 已推进 → 90 分钟空窗 | 器官只报 `tidy:true`，执行成功才 `markTidy()` | 测试 ⑪：“执行未确认时下一拍继续请求” |
 
 ## 已知边界
 

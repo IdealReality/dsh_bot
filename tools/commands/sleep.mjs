@@ -522,6 +522,12 @@ export async function sleepNow(opts = {}) {
       }
     } catch (e) { swallow(e, "sleep:backdate") }
     const r = NIGHT.endSleep(Date.now())
+    // 醒来即清醒（2026-11-08 验收整改）：阶跃由编排层调用 ——
+    // night 不再 import wakefulness（宪章 I5：器官之间不互相 import）。
+    try {
+      const wakeW = await import("../brain/organ/wakefulness.mjs")
+      wakeW.onWake(Date.now(), { cause: "睡醒" })
+    } catch (e) { swallow(e, "sleep:wake") }
     settle.ok = true
     settle.sleptMin = r && r.sleptMin
     settle.acc = r && r.acc

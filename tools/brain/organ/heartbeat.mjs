@@ -192,7 +192,11 @@ export async function beat(now = Date.now()) {
     let aro = null
     if (_beatCount % BEAT.wakeEveryBeats === 0) {
       try {
-        aro = wake.tick(now)
+        // 睡眠分期的状态由**这里**读、传进去（宪章 I5：器官之间不互相 import）。
+        // 读不到就当醒着：假睡判定宁可在"不知道"时保持醒，也不要卡在 sleep 档。
+        let inSleepNow = false
+        try { inSleepNow = !!sleepstage.snapshot(now).inSleep } catch (e) { swallow(e, 'beat:wake-inSleep') }
+        aro = wake.tick(now, { inSleep: inSleepNow })
         out.wake = { mode: aro.mode, level: aro.level, idleMin: aro.idleMin, activity: aro.activity }
         if (aro.enteredDoze) _log('[wake] 😴 闲下来了（level ' + aro.level + '）→ 假睡：主通道留着，睡眠维护通道启动')
         if (aro.leftDoze) _log('[wake] 👀 从假睡回来：' + aro.why)
@@ -204,8 +208,13 @@ export async function beat(now = Date.now()) {
         }
         // 自维护通道：tidy 是记忆巩固（DMN replay 的代码形状）。执行在编排层，
         // 这里只按器官的报告派活 —— 器官不认识 spawn（分层反向依赖，2026-11-04 门禁）。
+        // 只有**真的派出去了**才 markTidy（dozeTidy 返回 false = 被 isBusy 挡掉）。
         if (aro.tidy && ex.vitals?.dozeTidy) {
-          try { await ex.vitals.dozeTidy(now); out.vital.push('dozeTidy') } catch (e) { swallow(e, 'beat:vital:dozeTidy') }
+          try {
+            const did = await ex.vitals.dozeTidy(now)
+            if (did !== false) { try { wake.markTidy(now) } catch (e) { swallow(e, 'beat:wake-mark-tidy') } }
+            out.vital.push('dozeTidy')
+          } catch (e) { swallow(e, 'beat:vital:dozeTidy') }
         }
       } catch (e) { swallow(e, 'beat:wake') }
     }
@@ -274,6 +283,9 @@ export async function beat(now = Date.now()) {
           out.woke = { reason: w.reason, sleptMin: w.sleptMin, capped: !!w.capped }
           _log('[sleep] ⏰ 看门狗叫醒：' + w.reason + ' → 按 ' + w.sleptMin + ' 分钟结算'
             + (w.capped ? '（真实 ' + w.rawMin + ' 分钟，已按时长上限截断）' : ''))
+          // 醒来即清醒（2026-11-08 验收整改）：看门狗走的是 stage.reconcile，不经过
+          // night.endSleep，所以这一记阶跃由编排层补 —— night 不再 import wakefulness。
+          try { wake.onWake(now, { cause: 'watchdog' }) } catch (e) { swallow(e, 'beat:wake-on-wake') }
           // 醒来后状态要切回在线（睡着时 presence 返回 null，状态永远停在 dnd）。
           // 这一步属于编排层：器官只报 `needsOnline`，执行交给注入的 body 执行器。
           // 早先写在 night.mjs 里直接 import commands/status.mjs —— 那是脑层依赖编排层，
@@ -349,7 +361,11 @@ export async function beat(now = Date.now()) {
       }
     } catch (e) { swallow(e, 'beat:thalamus:admit') }
 
-    const d = await self.decide({ now, hasInterrupt: interruptPass, interruptUrgency: interruptPass ? urge : 0 })
+    const d = await self.decide({
+      now, hasInterrupt: interruptPass, interruptUrgency: interruptPass ? urge : 0,
+      // 假睡档也由编排层传进去（宪章 I5：self 不 import wakefulness）。
+      dozing: aro?.mode === 'doze',
+    })
     out.action = d.action
     out.why = d.why
     out.kept = !!d.kept

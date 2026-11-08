@@ -45,7 +45,6 @@
 import { swallow } from '../../lib/swallow.mjs'
 import * as rhythm from '../rhythm.mjs'
 import * as stage from './sleepstage.mjs'
-import * as wake from './wakefulness.mjs'   // 醒来即清醒（2026-11-08）
 import * as field from '../field.mjs'
 import * as hpa from './hpa.mjs'
 import { readJson, writeJsonAtomic } from '../json.mjs'
@@ -365,13 +364,14 @@ export function endSleep(now = Date.now()) {
   const r = stage.wake(now)
   try { rhythm.awake(now) } catch (e) { swallow(e, 'night:end:rhythm') }
 
-  // 醒来即清醒（2026-11-08，用户要的第①条）。
+  // 醒来即清醒（2026-11-08，用户要的第①条）——**由编排层调用**。
   //
   // 生理上这叫"觉醒"：睡眠惯性（sleep inertia）在真人身上要 15~30 分钟才散，
-  // 但用户要的是她一睁眼就清醒 —— 所以这里是**阶跃**而不是渐变：
-  // 清醒度器官直接把 level 顶到 wakeLevel、给药一记 NE 脉冲、再锁 45 分钟的清醒窗。
-  // 它必须放在结算之后：sleptMin/acc 已经落盘，level 的计算读的是新身体。
-  try { wake.onWake(now, { cause: '睡醒' }) } catch (e) { swallow(e, 'night:end:wake') }
+  // 但用户要的是她一睁眼就清醒 —— 所以是**阶跃**而不是渐变：
+  // wakefulness.onWake 把 level 顶到 wakeLevel、给一记 NE 脉冲、再锁 45 分钟清醒窗。
+  // 它必须在结算之后调用（sleptMin/acc 已落盘，level 读的是新身体）。
+  // ⚠ 验收整改（2026-11-08）：night 不再直接 import wakefulness（宪章 I5）。
+  //   两个调用点：sleep.mjs 在 endSleep 之后；heartbeat 在看门狗结算之后。
 
   // P2-1 (2026-11-03): CAR (cortisol awakening response). Waking IS a load
   // event: in real physiology the HPA axis fires a burst on awakening and

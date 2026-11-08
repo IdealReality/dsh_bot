@@ -76,7 +76,6 @@ import { readJson, mutateJson } from '../json.mjs'
 import { dataPath } from '../../lib/paths.mjs'
 import { swallow } from '../../lib/swallow.mjs'
 import * as field from '../field.mjs'
-import * as sleepstage from './sleepstage.mjs'
 
 const MIN = 60_000
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, Number(v) || 0))
@@ -193,9 +192,9 @@ function bodyNow(now) {
   return { ne, debt, fatigue }
 }
 
-function inSleepNow(now) {
-  try { return !!sleepstage.snapshot(now).inSleep } catch (e) { swallow(e, 'wakefulness:inSleep'); return false }
-}
+// 分层（2026-11-08 验收整改）：本器官**不读 sleepstage**。
+// 睡眠分期是不是 true 由编排层（心跳）在调用时传进来 —— 器官之间不互相 import，
+// 这是宪章 I5 的字面要求，也是"读状态的人"与"持有状态的人"该有的分工。
 
 function pushHistory(st, from, to, why, now) {
   st.history = [...(Array.isArray(st.history) ? st.history : []), {
@@ -225,10 +224,12 @@ function wakeInPlace(st, now, cause, { burst = true } = {}) {
  * @returns {{mode:string, level:number, enteredDoze:boolean, leftDoze:boolean,
  *            woke:boolean, tidy:boolean, repayMin:number, why:string}}
  */
-export function tick(now = Date.now()) {
+export function tick(now = Date.now(), o = {}) {
   const t = Number(now) || Date.now()
   const b = bodyNow(t)
-  const inSleep = inSleepNow(t)
+  // inSleep 由调用方给（心跳读 sleepstage 后传）。缺省 false = 当作醒着，
+  // 因为"没人在睡觉"是更安全的默认：半睡/假睡的判定不会被一个读不到的字段卡住。
+  const inSleep = o.inSleep === true
   const out = {
     at: t, mode: 'awake', level: 0, activity: 0, idleMin: 0,
     enteredDoze: false, leftDoze: false, woke: false, tidy: false, repayMin: 0, why: '',
@@ -280,9 +281,12 @@ export function tick(now = Date.now()) {
         st.doze.lastRepayMin = Number(st.doze.lastRepayMin || 0) + 5
         out.repayMin += 5
       }
-      // 自维护：假睡期间那条通道要在跑（节流在这里判，外部再判一次也无害）
+      // 自维护：假睡期间那条通道要在跑。
+      // ⚠ 时间戳**不在这里推进**（2026-11-08 验收整改）：曾经在器官里先写 lastTidyAt，
+      //   而编排层的 dozeTidy 可能因为"真睡维护正在跑"被 isBusy 挡掉 —— 时间戳已经走了，
+      //   这一档假睡 90 分钟内就再也不会派活。现在器官只报"该跑了"，由编排层在
+      //   **真正 spawn 成功之后**调 markTidy() 确认。
       if (t - Number(st.lastTidyAt || 0) >= RULES.tidyEveryMin * MIN) {
-        st.lastTidyAt = t
         out.tidy = true
       }
       const high = st.level > RULES.awakeAt
@@ -312,10 +316,9 @@ export function tick(now = Date.now()) {
         pushHistory(st, 'awake', 'doze', '闲下来了（level ' + st.level.toFixed(2) + '）', t)
         out.enteredDoze = true
         out.why = '闲下来了 → 假睡'
-        // 进假睡立刻启动一次自维护（若距上次 ≥ 节流窗）——用户要的"一边启动
-        // 睡眠时的自维护通道"。
+        // 进假睡立刻请求一次自维护 —— 用户要的"一边启动睡眠时的自维护通道"。
+        // 同样只请求、不记时间戳（见上面那段：执行成功后才 markTidy）。
         if (t - Number(st.lastTidyAt || 0) >= RULES.tidyEveryMin * MIN) {
-          st.lastTidyAt = t
           out.tidy = true
         }
       }
@@ -336,6 +339,23 @@ export function tick(now = Date.now()) {
     return { ...out, mode: st.mode, level: Number(st.level || 0), why: '状态文件被占用，这一拍没写' }
   }
   return out
+}
+
+/**
+ * 确认一次自维护真的派出去了（编排层在 spawn 成功后调）。
+ *
+ * 为什么不能由 tick 自己写 lastTidyAt：那会在"执行被拒"时也把节流窗口推走
+ * （真睡维护正在跑 → dozeTidy 直接 return → 90 分钟内不再派活）。
+ * 器官管"什么时候该派"，编排层管"有没有派出去"，两件事分开才没有空窗。
+ */
+export function markTidy(now = Date.now()) {
+  const t = Number(now) || Date.now()
+  const saved = mutateJson(STATE(), empty(), (cur) => {
+    const st = hydrate(cur)
+    st.lastTidyAt = t
+    return st
+  })
+  return saved ? Number(saved.lastTidyAt || 0) : 0
 }
 
 /**
@@ -391,8 +411,11 @@ export function touch(kind = 'message', o = {}) {
 /**
  * 真睡醒来时的阶跃（"一起来就清醒"）。
  *
- * 调用点：night.endSleep（自然/手动结算）与 sleepstage 看门狗的直接结算
- * （后者由 tick 的兜底覆盖）。化学上这里是蓝斑放电 + CAR 的合成效果：
+ * 调用点（都在**编排层**，本器官不认识睡眠分期 —— 宪章 I5）：
+ *   · sleep.mjs 在 night.endSleep() 之后
+ *   · heartbeat 在看门狗 night.watchSleep() 返回 woke 之后
+ *   · tick 的兜底（发现 mode 还停在 sleep 而 inSleep 已是 false）
+ * 化学上这里是蓝斑放电 + CAR 的合成效果：
  * level 直接顶到 wakeLevel，NE 给一记脉冲，burst 45 分钟。
  */
 export function onWake(now = Date.now(), o = {}) {

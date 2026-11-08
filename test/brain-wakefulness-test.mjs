@@ -156,15 +156,67 @@ A.tick(T0)
 A.touch('act', { now: T0, weight: 1 })       // 刚干过活：activity 抬起来
 const mid = idleRun(T0, 24)
 ok('闲了 24 分钟但还在带子里 → 不假睡', mid.last.mode === 'awake', `mode=${mid.last.mode} level=${mid.last.level}`)
+// 心理学维的判据（2026-11-08 验收整改）：同样是欠着觉，**闲下来**才该说出"乏"。
+// 这一条以前没有断言 —— 只有忙侧（"顾不上"）被测过，等于半边主张没验收。
+const idleSense = A.sense(T0 + 24 * MIN)
+ok('主观：闲下来时内感受浮上来（乏劲）', /乏劲/.test(idleSense), idleSense || '(空)')
+// 主观维的判据：sense() 只出词组，不许漏出数字（KPI 读数属于 snapshot）。
+ok('sense 不含数字（闲/忙/半睡三种状态）',
+  [idleSense, A.sense(T0 + 61 * MIN), A.sense(T0)].every((s) => !/[0-9]/.test(s)),
+  JSON.stringify([idleSense, A.sense(T0 + 61 * MIN), A.sense(T0).slice(0, 20)]))
 
-/* ── ⑨ 自维护节流：假睡不是加班 ──────────────────────────────────── */
-console.log('\n⑨ tidy 节流')
+/* ── ⑨ 化学：消息给 NE 一记相位脉冲 ─────────────────────────────── */
+// 化学维的判据（2026-11-08 验收整改）：本器官不改 DIMS 表，只给既有分子打脉冲；
+// 脉冲必须真的落进 field（而不是只在本文件里算了个 level）。
+console.log('\n⑨ NE 相位脉冲')
+clear()
+body({ debt: 0.3, ne: 0.3, fatigue: 0.1 }, T0)
+A.tick(T0)
+const ne0 = Number(F.snapshot(T0).dims.ne)
+A.touch('message', { now: T0 + MIN })
+const ne1 = Number(F.snapshot(T0 + MIN).dims.ne)
+ok('消息 → NE 抬升 ≥ 0.08（相位性放电）', ne1 - ne0 >= 0.08, `${ne0.toFixed(3)} → ${ne1.toFixed(3)}`)
+
+/* ── ⑩ 哲学：假睡档必须能改变"她此刻做什么" ─────────────────────── */
+// 哲学维的判据（2026-11-08 验收整改）：落点是 self.decide 的两层否决
+// （不续期旧计划 / 只选 rest）。先前只有代码没有断言 —— 现在钉住行为。
+console.log('\n⑩ 哲学：假睡时旧计划不续期')
+clear()
+const SELF = await import('../tools/brain/organ/self.mjs')
+const selfFile = path.join(tmp, 'brain', 'meta', 'self-state.json')
+fs.mkdirSync(path.dirname(selfFile), { recursive: true })
+const nowSelf = T0 + 5 * MIN
+fs.writeFileSync(selfFile, JSON.stringify({
+  at: nowSelf,
+  current: { action: 'watch', since: nowSelf, until: nowSelf + 20 * MIN, why: 'test:watch', spanMin: 20, lean: '' },
+  history: [], decisions: 1,
+}))
+const keptRes = await SELF.decide({ now: nowSelf + MIN })
+ok('醒着：未到期的旧计划照样续期（专心）', keptRes.kept === true && keptRes.action === 'watch', JSON.stringify({ action: keptRes.action, kept: keptRes.kept }))
+const restRes = await SELF.decide({ now: nowSelf + 2 * MIN, dozing: true })
+ok('假睡：旧计划不被续期，直接回到 rest', restRes.action === 'rest' && restRes.kept === false, JSON.stringify({ action: restRes.action, kept: restRes.kept, why: restRes.why }))
+ok('假睡的 why 说得出"半睡着"', /半睡/.test(String(restRes.why)), String(restRes.why))
+
+/* ── ⑪ 自维护节流：假睡不是加班 ──────────────────────────────────── */
+// 2026-11-08 验收整改：节流时间戳由**编排层**在 spawn 成功后 markTidy 推进，
+// 所以这里必须模拟编排层（tick 只请求，markTidy 才记账）。
+console.log('\n⑪ tidy 节流')
 clear()
 body({ debt: 0.35, ne: 0.35, fatigue: 0.3 }, T0)
 A.tick(T0)
-const thr = idleRun(T0, 60)
-const tidyCount = thr.all.filter((r) => r.tidy).length
+let tidyCount = 0
+for (let m = 2; m <= 60; m += 2) {
+  const r = A.tick(T0 + m * MIN)
+  if (r.tidy) { tidyCount++; A.markTidy(T0 + m * MIN) }
+}
 ok('一次假睡只派一次 tidy（90 分钟内不重复）', tidyCount === 1, `tidy 次数=${tidyCount}`)
+// 反向：编排层没确认（模拟 isBusy 挡住），节流窗不该被白推 —— 下一拍仍会请求。
+clear()
+body({ debt: 0.35, ne: 0.35, fatigue: 0.3 }, T0)
+A.tick(T0)
+let req = 0
+for (let m = 2; m <= 30; m += 2) if (A.tick(T0 + m * MIN).tidy) req++
+ok('执行未确认时下一拍继续请求（不吞掉自维护）', req > 1, `请求次数=${req}`)
 
 console.log(bad ? `\n✗ ${bad} 项失败` : '\n全部通过')
 process.exit(bad ? 1 : 0)

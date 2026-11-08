@@ -55,7 +55,6 @@ import path from 'node:path'
 import { selfStatePath as selfPath, BRAIN } from '../paths.mjs'
 import * as field from '../field.mjs'
 import * as night from './night.mjs'
-import * as wake from './wakefulness.mjs'   // 清醒度/假睡（2026-11-08）
 import * as thalamus from './thalamus.mjs'
 import * as inner from '../inner.mjs'
 import * as hpa from './hpa.mjs'
@@ -399,8 +398,10 @@ export async function decide(o = {}) {
   // 假睡（2026-11-08）：半睡时不该挑正事 —— 她只会想歇着。
   // 必须在「专心」之前读：如果她刚进假睡，未到期的旧计划（看番/上网）不该被续期，
   // 否则 rest 之下还挂着一份 watch，行动会从假睡里漏出来。
-  let dozing = false
-  try { dozing = wake.isDoze() } catch { /* 读不到就当醒着 */ }
+  // ⚠ 验收整改（2026-11-08）：这个标志由**编排层**传（心跳读过 wakefulness 后给），
+  //   self 不 import wakefulness —— 宪章 I5：器官之间不互相 import。
+  //   缺省 false = 醒着；外部直接调用 decide()（测试/面板）时不会误判成半睡。
+  let dozing = o.dozing === true
   if (prev && Number(prev.until || 0) > now) {
     const urge = Number(o.interruptUrgency || 0)
     let hardSleepy = false

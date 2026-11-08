@@ -91,6 +91,13 @@
 ## 2. 不变量（违反任一条即回滚）
 
 - **I5 单向**：上层只读下层、只写上层。器官之间不得互相 `import`，一律走 `organs/senses.mjs` 接线板。
+  现状欠账（2026-11-08 实测）：`heartbeat.mjs` 作为唯一节拍总线仍静态 import 多个器官
+  （`self` / `night` / `thalamus` / `hpa` / `pain` / `senses` …），`night.mjs` import `sleepstage`，
+  `self.mjs` import `night` / `thalamus` / `selfcon`。**新增代码不得增加器官间 import**：
+  「该不该做」的输入一律由编排层（`heartbeat` / `commands/*`）传参。
+  注意门禁 `scripts/check.mjs:835` 只查 `lib→tools→brain→commands` 的方向，**不查器官互引**——
+  这一条靠评审，不靠门禁。`wakefulness` 是第一个按此整改的样板：它的三条跨器官依赖
+  （`wake→sleepstage`、`night→wake`、`self→wake`）已全部改成传参 / 编排层调用。
 - **I6 体液唯一**：器官改变全身状态的唯一方式是循环层分泌；`field.setDim` 是循环层的私有方法。
   现状欠账（2026-11-08 实测）：`cell/neuron.mjs:310`、`organ/hpa.mjs:362`、`organ/sleepstage.mjs:394`
   仍直写 `setDim`。新增代码一律不得增加直写点；改到这三处时应顺手迁到循环层。

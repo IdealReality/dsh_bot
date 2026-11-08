@@ -120,7 +120,9 @@ export async function bindBody(deps) {
       // 走独立进程 + isBusy 互斥：与真睡维护共用同一个"是否在整理"的闸，
       // 不会两路同时跑 LLM 抽取抢额度。
       dozeTidy: () => {
-        if (deps.isBusy()) return
+        // 返回值 = "这一趟到底派没派出去"。编排层据此决定要不要 markTidy
+        // （器官只请求，不记账 —— 否则被 isBusy 挡掉时会把节流窗白推 90 分钟）。
+        if (deps.isBusy()) return false
         deps.setBusy(true)
         try {
           const stamp = 'doze-' + new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
@@ -131,7 +133,8 @@ export async function bindBody(deps) {
           p.on('error', () => deps.setBusy(false))
           p.unref()
           deps.log('[body] 💤 假睡自维护：nightwork tidy（巩固记忆，主通道不动）')
-        } catch (e) { deps.setBusy(false); swallow(e, 'body:dozeTidy') }
+          return true
+        } catch (e) { deps.setBusy(false); swallow(e, 'body:dozeTidy'); return false }
       },
       brain: () => { try { deps.brainTick() } catch (e) { swallow(e, 'body:brain') } },
       presence: () => {
