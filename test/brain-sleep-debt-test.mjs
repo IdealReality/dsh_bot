@@ -111,5 +111,15 @@ sleepstage.sleep(base + 2 * H)
 const sp = spinal.spinalState({ now: base + 3 * H })
 ok('真睡着时 spinal 报半梦半醒', /半梦半醒/.test(String(sp.note)), sp.note || '(空)')
 
+/* ── ⑥ 债务这条腿还得能把人送进睡眠 ─────────────────────────────── */
+// 事故背景：她历史上 6 次真入睡**全部**是 debt 硬底触发的（积压从没到 66）。
+// 还债定标修好后债不再顶格，若门槛还留在 0.92，她可能再也不睡 —— 那比"一直很累"更糟。
+console.log('\n⑥ 债务单独触发睡眠')
+const night = await import('../tools/brain/organ/night.mjs')
+const sleepCan = (debt) => night.sleepiness(base, { backlog: { debt } })
+ok('债到 0.7 时单独判定该睡', sleepCan(0.7).shouldSleep === true, `score=${sleepCan(0.7).score}`)
+ok('正常一天的债（0.44）不触发睡眠', sleepCan(0.44).shouldSleep === false, `score=${sleepCan(0.44).score}`)
+ok('债务线在 sense 阈值之上（不会白天就想睡）', night.RULES.debtSleepAt > TIRED, `debtSleepAt=${night.RULES.debtSleepAt}`)
+
 console.log(bad ? `\n✗ ${bad} 项失败` : '\n全部通过')
 process.exit(bad ? 1 : 0)

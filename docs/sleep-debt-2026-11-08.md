@@ -52,8 +52,15 @@
 1. `tools/brain/field.mjs`：`repaySleep` 的时间常数提成具名常量并定标
    `SLEEP_REPAIR_TAU_H = 3.2`（一夜清 ~88%，醒来 0.08~0.12）、`FATIGUE_REPAIR_TAU_H = 5.5`（原值）。
    取值同时满足三条：正常白天不到"缺觉"、连熬 20h 以上仍判得出困、
-   连熬 24h 才够到 `night.mjs` 的 hardFloor 0.92。
-2. 一次性状态校正：现存 `sleepDebt` 是"旧模型下被顶格"的值，按新模型重算
+   连熬 24h 才够到"来不及睡"的兜底线。
+2. **必须同时改掉入睡门槛**（否则她会从"一直很累"变成"再也不睡"）：
+   实测她历史 6 次真入睡的 `why` **全部**是 `欠觉欠到撑不住了（30~36/100）`，
+   也就是只靠 `debt >= 0.92` 这条硬底进的睡（"积压"从没到过 66）。
+   0.92 之所以天天踩得到，正是因为还债定标错了。定标修好后债不再顶格，
+   所以 `organ/night.mjs` 新增 `RULES.debtSleepAt = 0.7`：
+   按新曲线那对应"熬到深夜 4~5 点、约 20~21 小时没睡"，是真该睡的点；
+   0.92 保留为"来不及睡"的兜底（`debtCollapseAt`）。
+3. 一次性状态校正：现存 `sleepDebt` 是"旧模型下被顶格"的值，按新模型重算
    （1.0 × exp(-6.84/3.2) + 醒后 12.28h 累积 = 0.364），备份 `field.json.bak-20261108-debtfix`。
 
 ## 四、顺带查出来的第二个静默 bug：`spinalState()` 会写盘
@@ -76,7 +83,7 @@ try { asleepNow = asleep(now) === true } catch { ... }   // asleep 来自 rhythm
 
 ## 五、验证
 
-新增 `test/brain-sleep-debt-test.mjs`（已注册进 `tools/run-tests.mjs`），10 项全绿；
+新增 `test/brain-sleep-debt-test.mjs`（已注册进 `tools/run-tests.mjs`），13 项全绿；
 **换回旧实现会红 8 项**（睡眠债）/**2 项**（spinal 写盘），回归方向是钉死的：
 
 ```
@@ -85,11 +92,12 @@ try { asleepNow = asleep(now) === true } catch { ... }   // asleep 来自 rhythm
 ③ 连熬 20h → 0.650（仍判得出困）+ sense() 说缺觉
 ④ 睡醒后 sense() = 「感觉身上没什么乏的，还算清爽。」（旧：「感觉缺觉，脑子发钝。」）
 ⑤ spinalState 连调 3 次，rhythm.json 一个字节不变；真睡着时报「半梦半醒」
+⑥ debt=0.7 单独判定该睡（score=25），debt=0.44 不触发（score=16）
 ```
 
 生产生效：`bot.mjs qq-server` 重启（PID 227710 → 228190），心跳/装配/结算全在新代码上；
 活数据复核 `sleepDebt = 0.364` → system 里那一行变成「身体：感觉有点欠觉。」
-（12.3 小时没睡，本来就该"有点"，不该是"缺觉"）。
+（12.3 小时没睡，本来就该"有点"，不该是"缺觉"）。全套 `node tools/run-tests.mjs` 114 套通过。
 
 > 注意：`repaySleep` 只在 `sleepstage.wake()` 里跑，所以**新常量要等下一次真睡才体现**：
 > 那之后她醒来会是「身上是轻的，脑子也转得动」或「还算清爽」，不再天天"缺觉"。
