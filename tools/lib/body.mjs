@@ -86,6 +86,15 @@ export async function bindBody(deps) {
         d?.why || '',
       )
     } catch (e) { swallow(e, 'body:syncFocus') }
+    // 工作量（2026-11-08）：她自己的行动也算"有事在做" —— 与"有人说话"同一条腿，
+    // 撑住清醒度。**rest 不算**：歇着要是也记工作量，她永远闲不下来，假睡永不发生。
+    try {
+      const a = String(activity || '')
+      if (a && a !== 'rest') {
+        const A = await import('../brain/organ/wakefulness.mjs')
+        A.touch('act', { weight: 0.7 })
+      }
+    } catch (e) { swallow(e, 'body:wake-act') }
   }
 
   HB.bind({
@@ -102,6 +111,28 @@ export async function bindBody(deps) {
         try { deps.spawn(process.execPath, [deps.botPath(), 'research', 'watchdog'], { detached: true, stdio: 'ignore', windowsHide: true }).unref() } catch (e) { swallow(e, 'body:research') }
       },
       qzone: () => { try { void deps.tryQzone() } catch (e) { swallow(e, 'body:qzone') } },
+      // 假睡的自维护通道（2026-11-08）：只跑"整理（记忆巩固）"这一道工序。
+      //
+      // 为什么不跑 review/optimize：那两道要清醒的判断力（改代码/归档）。
+      // 真睡里它们也是靠 maintenance 深度门控才允许跑（N3≥0.70）——假睡是 N1，
+      // 深度连 0.35 都不到。边打瞌睡边改代码不是"珍惜时间"，是自残。
+      //
+      // 走独立进程 + isBusy 互斥：与真睡维护共用同一个"是否在整理"的闸，
+      // 不会两路同时跑 LLM 抽取抢额度。
+      dozeTidy: () => {
+        if (deps.isBusy()) return
+        deps.setBusy(true)
+        try {
+          const stamp = 'doze-' + new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+          const p = deps.spawn(process.execPath,
+            [deps.botPath(), 'nightwork', 'tidy', '--stamp', stamp],
+            { detached: true, stdio: 'ignore', windowsHide: true })
+          p.on('exit', () => deps.setBusy(false))
+          p.on('error', () => deps.setBusy(false))
+          p.unref()
+          deps.log('[body] 💤 假睡自维护：nightwork tidy（巩固记忆，主通道不动）')
+        } catch (e) { deps.setBusy(false); swallow(e, 'body:dozeTidy') }
+      },
       brain: () => { try { deps.brainTick() } catch (e) { swallow(e, 'body:brain') } },
       presence: () => {
         // 存在感执行器（2026-11-03）：判断在 organ/presence，执行在 status 命令的 --step。

@@ -57,6 +57,7 @@ import * as anchor from '../anchor.mjs'
 import * as vitals from './vitals.mjs'   // B8 内感受：容器本身的饱胀/闷
 import * as metabolism from './metabolism.mjs'
 import * as rhythm from '../rhythm.mjs'
+import * as wake from './wakefulness.mjs'   // 清醒度 / 假睡（2026-11-08）
 
 const MIN = 60_000
 
@@ -86,6 +87,10 @@ export const BEAT = {
   // 5 分钟一次：卡死的发现延迟 < 5 分钟，而正常心跳的 IO 代价可以忽略
   // （只在 inSleep=true 时才读两个文件，醒着时一次 readJson 就返回）。
   sleepWatchEveryBeats: 10,
+  // 清醒度（2026-11-08）：一拍一次。它不是"定时任务"，是身体档位 ——
+  // 假睡/醒来的判定必须在 30 秒内跟上，否则"刚闲下来"和"有人在叫"会撞在一起。
+  // 代价：一次 field 读 + 一次 wakefulness.json 的锁内读改写（< 1ms）。
+  wakeEveryBeats: 1,
   paincheckEveryBeats: 40,   // 20 分钟一次全链自检（发现问题直接注入痛，见 brain/paincheck.mjs）
   collateralEveryBeats: 2,  // 60s ← 侧支循环试跳（lib/collateral，主链全灭后保持侧支活性，2026-11-03）
     // 2026-11-02 修：body.mjs 早就注册了 vitals.brain，但 heartbeat 从来没调过它。
@@ -181,7 +186,30 @@ export async function beat(now = Date.now()) {
     // ── ① 推进身体时间 ──────────────────────────────────────────
     // 所有按 dt 演化的东西在这里统一推进一次（不靠各自 tick）
     try { field.evolve(now) } catch (e) { swallow(e, 'beat:field') }
-    try { accrueSleepDebt(now) } catch (e) { swallow(e, 'beat:debt') }
+    // 清醒度（2026-11-08）：身体档位 —— 醒来是阶跃、忙时维持、闲下来进假睡。
+    // 放在 field.evolve 之后（读刚推进过的 dims），accrueSleepDebt 之前
+    // （假睡时腺苷仍在产生，只是慢；账要按档位记）。
+    let aro = null
+    if (_beatCount % BEAT.wakeEveryBeats === 0) {
+      try {
+        aro = wake.tick(now)
+        out.wake = { mode: aro.mode, level: aro.level, idleMin: aro.idleMin, activity: aro.activity }
+        if (aro.enteredDoze) _log('[wake] 😴 闲下来了（level ' + aro.level + '）→ 假睡：主通道留着，睡眠维护通道启动')
+        if (aro.leftDoze) _log('[wake] 👀 从假睡回来：' + aro.why)
+        if (aro.woke) _log('[wake] ⚡ 醒来即清醒（' + aro.why + '）')
+        // 假睡的恢复：浅睡也还债，只是效率低（0.35 倍有效睡眠）。
+        // 按 5 分钟一档结算，避免每拍一次 field 写盘。
+        if (aro.repayMin > 0) {
+          try { field.repaySleep((aro.repayMin / 60) * wake.RULES.dozeRepayFactor, now) } catch (e) { swallow(e, 'beat:doze-repay') }
+        }
+        // 自维护通道：tidy 是记忆巩固（DMN replay 的代码形状）。执行在编排层，
+        // 这里只按器官的报告派活 —— 器官不认识 spawn（分层反向依赖，2026-11-04 门禁）。
+        if (aro.tidy && ex.vitals?.dozeTidy) {
+          try { await ex.vitals.dozeTidy(now); out.vital.push('dozeTidy') } catch (e) { swallow(e, 'beat:vital:dozeTidy') }
+        }
+      } catch (e) { swallow(e, 'beat:wake') }
+    }
+    try { accrueSleepDebt(now, { dozing: aro?.mode === 'doze' }) } catch (e) { swallow(e, 'beat:debt') }
     try { inner.fade(now) } catch (e) { swallow(e, 'beat:inner') }
     try { inner.settle(now) } catch (e) { swallow(e, 'beat:settle') }   // 没说完的话 → tension
     try { hpa.evolve(now) } catch (e) { swallow(e, 'beat:hpa') }
@@ -435,7 +463,7 @@ export function status() {
 // 进程暂停、容器重启都不该凭空生成或丢弃睡眠债。
 const _DEBT_CLOCK = { at: 0 }
 
-function accrueSleepDebt(now) {
+function accrueSleepDebt(now, o = {}) {
   let inSleep = false
   try { inSleep = !!sleepstage.snapshot().inSleep } catch { /* 拿不到就当醒着 */ }
 
@@ -453,7 +481,12 @@ function accrueSleepDebt(now) {
 
   const h = new Date(now).getHours()
   const nightish = (h >= 0 && h < 6) || h >= 23
-  const delta = 0.02 * (nightish ? 2.5 : 1) * dtH
+  // 假睡（2026-11-08）：N1 浅睡里腺苷仍在产生，只是慢得多。
+  // 若照清醒速率记，假睡的净恢复会被账完全吃掉（还 0.35 倍、欠 1 倍 = 净亏），
+  // 那"假睡"就只是换个姿势醒着。
+  const doze = !!o.dozing
+  const rate = 0.02 * (nightish ? 2.5 : 1) * (doze ? wake.RULES.dozeAccrueFactor : 1)
+  const delta = rate * dtH
   // 阈值别设太高：一拍 30 秒只有 0.0004（深夜）~0.00017（白天），
   // 设 0.0002 会让白天几乎永远不写账 —— 那还是"没人说话就不欠觉"。
   // 现在只要超过 0.0001 就记（一拍 30 秒最少 0.00017，刚好过线）。

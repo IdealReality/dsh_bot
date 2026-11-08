@@ -55,6 +55,7 @@ import path from 'node:path'
 import { selfStatePath as selfPath, BRAIN } from '../paths.mjs'
 import * as field from '../field.mjs'
 import * as night from './night.mjs'
+import * as wake from './wakefulness.mjs'   // 清醒度/假睡（2026-11-08）
 import * as thalamus from './thalamus.mjs'
 import * as inner from '../inner.mjs'
 import * as hpa from './hpa.mjs'
@@ -395,6 +396,11 @@ export async function decide(o = {}) {
   //    注意不能只判 action!=='sleep'（那是"已经在睡"），
   //    真正要的是"**该不该现在改主意去睡**"。
   const prev = st.current
+  // 假睡（2026-11-08）：半睡时不该挑正事 —— 她只会想歇着。
+  // 必须在「专心」之前读：如果她刚进假睡，未到期的旧计划（看番/上网）不该被续期，
+  // 否则 rest 之下还挂着一份 watch，行动会从假睡里漏出来。
+  let dozing = false
+  try { dozing = wake.isDoze() } catch { /* 读不到就当醒着 */ }
   if (prev && Number(prev.until || 0) > now) {
     const urge = Number(o.interruptUrgency || 0)
     let hardSleepy = false
@@ -404,7 +410,7 @@ export async function decide(o = {}) {
       hardSleepy = !!sp.shouldSleep && Number(sp?.detail?.debt || 0) >= 0.92
     } catch { /* 取不到就当作不困 */ }
 
-    if (!hardSleepy && urge < 1.4 && prev.action !== 'sleep') {
+    if (!hardSleepy && !dozing && urge < 1.4 && prev.action !== 'sleep') {
       return { ...prev, kept: true }
     }
   }
@@ -458,8 +464,16 @@ export async function decide(o = {}) {
     why = soNow < 0.5
       ? '有人在等（脑子有点木，回得会短）'
       : '有人在等'
+  } else if (dozing) {
+    // 层二点五：半睡着（2026-11-08）。
+    //
+    // 它排在"有人等着"之后，是刻意的：假睡要保留主通道，所以 reply 优先。
+    // 排在"想做"之前也是刻意的：N1 里她组织不起长回答，更不会突然想写日记。
+    // 这一步不是"不许做事"，是**没有那部分资源**（精神学：DMN 主导时
+    // 外显任务网络被压下去，她连候选都想不到）。
+    action = 'rest'
+    why = '半睡着，没心思做什么'
   } else {
-    // 层三：在"想做"里挑一件 —— 只在这时候才看意愿
     const cands = Object.keys(ACTIONS)
       .filter((k) => k !== 'sleep' && k !== 'reply')
       .filter((k) => ACTIONS[k].need <= depth + 0.15)   // 精力不够就不在候选里（不是降权）
@@ -484,7 +498,9 @@ export async function decide(o = {}) {
   // ④ 让她自己说出来 —— 这一步是"骰子在脑子里掷完"的关键。
   //    注意：只把**倾向方向**给她，不给她权重数字，也不给她"系统选了哪个"。
   let lean = ''
-  try {
+  // 假睡时不掷骰子：她此刻没有"想干什么"可言，再调一次 LLM 只会让她
+  // 在半睡里编出一句"我想去看番" —— 那是假的、而且每 30 秒烧一次 token。
+  if (!dozing) try {
     // 只把**真正在这一层参与竞争**的动作交给她 —— 也就是过了 need 过滤的那些。
     //
     // ⚠️ 2026-11-02 修正：原来这里给她的是**全部** ACTIONS（除了 sleep），

@@ -68,6 +68,9 @@ export async function run(argv = []) {
       intents: intents.stats(),
       consolidation: consolidate.status(),
       attention: attention.state().inbox?.length || 0,
+      // 清醒度/假睡（2026-11-08）：醒着/半睡/真睡、阈值、工作量、醒来窗。
+      // 放这里是为了"她为什么现在不做事"能一眼查到 —— 面板是唯一的取证入口。
+      wakefulness: (await import('../brain/organ/wakefulness.mjs')).snapshot(),
       metrics: metrics.snapshot().last30,
     }, null, 1))
     return

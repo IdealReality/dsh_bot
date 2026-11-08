@@ -1,4 +1,4 @@
-// organ/arousal —— 清醒度与假睡：一个阈值，不是一根电量条（2026-11-08）
+// organ/wakefulness —— 清醒度与假睡：一个阈值，不是一根电量条（2026-11-08）
 //
 // ══════════════════════════════════════════════════════════════════════
 // 用户要的形状
@@ -65,12 +65,12 @@
 // ══════════════════════════════════════════════════════════════════════
 // 分层（别把这条拆了）
 // ══════════════════════════════════════════════════════════════════════
-//   · evolve() / touch() / onWake()：**写**。只在唯一节拍（心跳）和外部事件里调。
+//   · tick() / touch() / onWake()：**写**。只在唯一节拍（心跳）和外部事件里调。
 //   · sense() / snapshot() / isDoze()：**纯读**。装配提示词每轮都会调，
 //     它们不能演化、不能落盘 —— 否则"读一眼状态"就会改她的身体
 //     （field.peekValence 的注释里记过同一条教训）。
 //   · 执行（spawn nightwork tidy / 切状态）不在这里：器官只说"该做了"
-//     （evolve 返回 tidy:true），做不做、怎么做出编排层决定（body.mjs）。
+//     （tick 返回 tidy:true），做不做、怎么做出编排层决定（body.mjs）。
 //     这是 2026-11-04 门禁抓到的「分层反向依赖」的同一条线。
 import { readJson, mutateJson } from '../json.mjs'
 import { dataPath } from '../../lib/paths.mjs'
@@ -83,7 +83,7 @@ const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, Number(v) || 0))
 
 /**
  * 判定参数。所有阈值都是**行为口径**，不是"看起来差不多"：
- * 改了任何一个，test/brain-arousal-test.mjs 里的行为断言必须仍然成立。
+ * 改了任何一个，test/brain-wakefulness-test.mjs 里的行为断言必须仍然成立。
  */
 export const RULES = {
   // 保持清醒：高于它 = 醒着。醒来之后 burst 也直接把 level 顶到这里之上。
@@ -121,12 +121,12 @@ export const RULES = {
   // 为什么必须节流：tidy 要调 LLM 抽取，一次几十秒；假睡是"空闲"，不是"加班"。
   tidyEveryMin: 90,
   // 欠觉到这条线就不假睡了 —— 该真睡。**必须与 night.RULES.debtSleepAt 一致**；
-  // 这里不 import night（night → arousal 已经是静态依赖，反向会成环），
-  // 改由测试断言两者相等（test/brain-arousal-test.mjs ⑦）。
+  // 这里不 import night（night → wakefulness 已经是静态依赖，反向会成环），
+  // 改由测试断言两者相等（test/brain-wakefulness-test.mjs ⑦）。
   dozeSkipDebtAt: 0.7,
 }
 
-const STATE = () => dataPath('arousal.json')
+const STATE = () => dataPath('wakefulness.json')
 
 const empty = () => ({
   at: 0,
@@ -139,7 +139,7 @@ const empty = () => ({
   cooldownUntil: 0,         // 退出假睡后的冷却
   doze: { beganAt: 0, minutes: 0, lastRepayMin: 0 },
   lastTidyAt: 0,            // 跨 doze 的 tidy 节流（不随 doze 重置）
-  lastDebt: 0,              // 最近一次 evolve 看到的账（sense 纯读要用）
+  lastDebt: 0,              // 最近一次 tick 看到的账（sense 纯读要用）
   lastFatigue: 0,
   wake: null,               // 最近一次醒来 {at, cause, from}
   history: [],              // [{at, from, to, why, level}] —— 最多 30 条
@@ -174,7 +174,7 @@ function decay(v, dtMin) {
  *   · 忙（activity 0.9 / NE 0.55 / debt 0.4）→ 0.62：高于 awakeAt，清醒。
  *   · 闲 35 分钟（activity 0.33 / NE 0.35 / debt 0.4）→ 0.30：进 doze 的门口。
  *   · 债低（0.1）且闲 → 0.35：高于 dozeAt，不假睡 —— 不困的人不该半睡。
- *   · 债高（0.7）且闲 → 0.18：低于 dozeAt，但那时应该真睡（看 evolve 的 skip）。
+ *   · 债高（0.7）且闲 → 0.18：低于 dozeAt，但那时应该真睡（看 tick 的 skip）。
  */
 export function levelOf({ ne = 0.35, activity = 0, debt = 0 } = {}) {
   const ceiling = 1 - 0.6 * clamp(debt, 0, 1)
@@ -189,12 +189,12 @@ function bodyNow(now) {
     ne = Number(snap?.dims?.ne ?? 0.35)
     debt = Number(snap?.dims?.sleepDebt ?? 0)
     fatigue = Number(snap?.dims?.fatigue ?? 0)
-  } catch (e) { swallow(e, 'arousal:body') }
+  } catch (e) { swallow(e, 'wakefulness:body') }
   return { ne, debt, fatigue }
 }
 
 function inSleepNow(now) {
-  try { return !!sleepstage.snapshot(now).inSleep } catch (e) { swallow(e, 'arousal:inSleep'); return false }
+  try { return !!sleepstage.snapshot(now).inSleep } catch (e) { swallow(e, 'wakefulness:inSleep'); return false }
 }
 
 function pushHistory(st, from, to, why, now) {
@@ -209,7 +209,9 @@ function wakeInPlace(st, now, cause, { burst = true } = {}) {
   st.mode = 'awake'
   st.since = now
   st.level = Math.max(Number(st.level || 0), RULES.wakeLevel)
-  st.activity = Math.max(Number(st.activity || 0), 0.55)
+  // 不改 activity：工作量只由**外部输入**决定（消息 / 她自己的行动）。
+  // 第一版在这里把 activity 抬到 0.55，结果"刚醒"和"忙着"的措辞互相覆盖，
+  // 她一睁眼就说"手上有事撑着"——醒来这件事实被自己的副作用盖掉了。
   if (burst) st.burstUntil = now + RULES.wakeBurstMin * MIN
   st.doze = { ...empty().doze }
   st.wake = { at: now, cause: String(cause || '').slice(0, 40), from }
@@ -223,7 +225,7 @@ function wakeInPlace(st, now, cause, { burst = true } = {}) {
  * @returns {{mode:string, level:number, enteredDoze:boolean, leftDoze:boolean,
  *            woke:boolean, tidy:boolean, repayMin:number, why:string}}
  */
-export function evolve(now = Date.now()) {
+export function tick(now = Date.now()) {
   const t = Number(now) || Date.now()
   const b = bodyNow(t)
   const inSleep = inSleepNow(t)
@@ -380,7 +382,7 @@ export function touch(kind = 'message', o = {}) {
     return st
   })
   // 化学：相位性 NE 脉冲。放在锁外，避免在状态锁里再去抢 field 的锁。
-  try { field.poke('ne', isMsg ? RULES.msgNe : RULES.actNe, { why: 'arousal:' + kind, now: t }) } catch (e) { swallow(e, 'arousal:touch-ne') }
+  try { field.poke('ne', isMsg ? RULES.msgNe : RULES.actNe, { why: 'wakefulness:' + kind, now: t }) } catch (e) { swallow(e, 'wakefulness:touch-ne') }
   if (!saved) return { ...out, mode: 'awake', level: 0, why: '状态文件被占用' }
   return out
 }
@@ -389,7 +391,7 @@ export function touch(kind = 'message', o = {}) {
  * 真睡醒来时的阶跃（"一起来就清醒"）。
  *
  * 调用点：night.endSleep（自然/手动结算）与 sleepstage 看门狗的直接结算
- * （后者由 evolve 的兜底覆盖）。化学上这里是蓝斑放电 + CAR 的合成效果：
+ * （后者由 tick 的兜底覆盖）。化学上这里是蓝斑放电 + CAR 的合成效果：
  * level 直接顶到 wakeLevel，NE 给一记脉冲，burst 45 分钟。
  */
 export function onWake(now = Date.now(), o = {}) {
@@ -398,7 +400,7 @@ export function onWake(now = Date.now(), o = {}) {
   const saved = mutateJson(STATE(), empty(), (cur) => {
     const st = hydrate(cur)
     const b = bodyNow(t)
-    st.activity = Math.max(Number(st.activity || 0), 0.55)
+    // 同样不抬 activity（见 wakeInPlace 的注释）：醒来是清醒度的事，不是工作量的事。
     st.level = Math.max(levelOf({ ne: Number(b.ne || 0.35), activity: st.activity, debt: b.debt }), RULES.wakeLevel)
     wakeInPlace(st, t, o.cause ? String(o.cause) : '睡醒了', { burst: true })
     out.mode = st.mode
@@ -406,7 +408,7 @@ export function onWake(now = Date.now(), o = {}) {
     out.woke = true
     return st
   })
-  try { field.poke('ne', RULES.wakeNe, { why: 'arousal:wake', now: t }) } catch (e) { swallow(e, 'arousal:wake-ne') }
+  try { field.poke('ne', RULES.wakeNe, { why: 'wakefulness:wake', now: t }) } catch (e) { swallow(e, 'wakefulness:wake-ne') }
   return saved ? out : { ...out, why: '状态文件被占用' }
 }
 
@@ -432,23 +434,32 @@ export function sense(now = Date.now()) {
       return '半睡着，眼皮沉，能听见动静，但反应慢半拍'
     }
     const t = Number(now) || Date.now()
-    if (t < Number(st.burstUntil || 0)) {
-      // 刚醒的 45 分钟：醒来是阶跃的，但"亮"还在慢慢落。
-      const leftMin = Math.round((Number(st.burstUntil) - t) / MIN)
-      return '人是清醒的，脑子还有点亮' + (leftMin > 25 ? '（刚醒不久）' : '')
-    }
     const idleMin = st.lastInputAt ? (t - Number(st.lastInputAt)) / MIN : 999
     const level = Number(st.level || 0)
     const debt = Number(st.lastDebt || 0)
     const fatigue = Number(st.lastFatigue || 0)
+    // 心理学反向：忙着的时候注意在外，累被遮蔽。不是不累，是"顾不上"。
+    // ⚠ 必须排在"刚醒"之前：刚醒 + 忙 的组合里，"顾不上"信息量更大；
+    //   反过来会把刚醒的 45 分钟全说成"脑子还有点跳"，忙得有债的事实就丢了。
+    if (Number(st.activity || 0) >= 0.55 && (debt > 0.2 || fatigue > 0.25)) {
+      return '手上有事撑着，累是累，一时顾不上'
+    }
+    if (t < Number(st.burstUntil || 0)) {
+      // 刚醒的 45 分钟：醒来是阶跃的，但"亮"还在慢慢落。
+      // ⚠ burstUntil 也被"忙"刷新（连续消息会把清醒窗一直续上），所以措辞必须看
+      // **真正的醒来时刻** st.wake.at —— 否则她一整天在聊天时都会被告知"刚醒不久"，
+      // 那是一句假话，而且会把"忙"错说成"刚起"。
+      const wakeAt = Number(st.wake?.at || 0)
+      const wokeRecently = wakeAt > 0 && t - wakeAt < RULES.wakeBurstMin * MIN
+      if (wokeRecently) {
+        const leftMin = Math.round((Number(st.burstUntil) - t) / MIN)
+        return '人是清醒的，脑子还有点亮' + (leftMin > 25 ? '（刚醒不久）' : '')
+      }
+    }
     // 心理学：闲下来时内感受浮上来 —— 同样的债，体感更强。
     // 只有真的欠着/乏着才说，债低时说"乏"是无中生有。
     if (idleMin >= RULES.idleMin && level < RULES.awakeAt && (debt > 0.2 || fatigue > 0.25)) {
       return '手上没什么事，乏劲就浮上来了'
-    }
-    // 心理学反向：忙着的时候注意在外，累被遮蔽。不是不累，是"顾不上"。
-    if (Number(st.activity || 0) >= 0.55 && (debt > 0.2 || fatigue > 0.25)) {
-      return '手上有事撑着，累是累，一时顾不上'
     }
     return ''
   } catch { return '' }

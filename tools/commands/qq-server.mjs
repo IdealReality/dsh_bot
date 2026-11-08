@@ -440,6 +440,8 @@ export async function run(argv = []) {
         stopPreempt()
       }
       if (!inbound) return
+      // 清醒度（2026-11-08）：一条消息 = 一次相位性唤醒；假睡中的她在这里被叫回 awake（主通道保留）。
+      try { const A = await import('../brain/organ/wakefulness.mjs'); A.touch('message', { now: Date.now() }) } catch (e) { swallow(e, 'qq:wake') }
       extra = inbound.extra
       const { imageDesc, imageIsSticker, imageUris, videoNote, userText, memText, display } = inbound
       // 名册登记（2026-11-03）：每条消息过一遍「这是谁」—— 幂等、旁路，失败不影响回复。

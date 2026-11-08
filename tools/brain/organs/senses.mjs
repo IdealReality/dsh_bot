@@ -19,19 +19,26 @@
 //     多读一项 —— field 永远不动。
 //
 // 契约：senses() 同步、永不抛错；每项是 string 或 null；空数组 = 身体没话说。
-// 顺序有讲究：病感（全身性）→ 慢痛（局部）→ 饿感（最贴近当下，放最后）。
+// 顺序有讲究：清醒度（最底层的档位）→ 病感（全身性）→ 慢痛（局部）→ 饿感（最贴近当下，放最后）。
 import { feverSense as immuneFeverSense } from '../../lib/immune.mjs'
 import { swallow } from '../../lib/swallow.mjs'
 
 const _organs = {}
 // 预取（模块加载即发车）：pain → hpa → field 的链路在微任务里才求值，
 // 此时 field 已经完成初始化 —— 不与 field 的加载构成环，也没有半初始化风险。
-Promise.all([import('../organ/pain.mjs'), import('../organ/metabolism.mjs'), import('../organ/vitals.mjs'), import('../organ/vision.mjs')])
-  .then(([pn, mb, vt, vs]) => { _organs.pain = pn; _organs.metabolism = mb; _organs.vitals = vt; _organs.vision = vs })
+Promise.all([import('../organ/pain.mjs'), import('../organ/metabolism.mjs'), import('../organ/vitals.mjs'), import('../organ/vision.mjs'), import('../organ/wakefulness.mjs')])
+  .then(([pn, mb, vt, vs, ar]) => { _organs.pain = pn; _organs.metabolism = mb; _organs.vitals = vt; _organs.vision = vs; _organs.wake = ar })
   .catch((e) => swallow(e, 'senses:preload'))
 
 export function senses() {
   const bits = []
+  // 清醒度（2026-11-08）：她是醒着、半睡、还是刚醒。
+  // 放第一位不是排版：field.senseInner 的正面兜底只在 bits 为空时触发，
+  // 半睡时若不给一句，"身上是轻的，脑子也转得动"会把状态说反。
+  try {
+    const ar = _organs.wake && _organs.wake.sense && _organs.wake.sense()
+    if (ar) bits.push(ar)
+  } catch (e) { swallow(e, 'senses:wake') }
   // 免疫病感：发热是全身性事件。放在"正面信号"兜底之前——发烧时她不该被描述成"身上是轻的"。
   try { const fever = immuneFeverSense(); if (fever) bits.push(fever) } catch (e) { swallow(e, 'senses:fever') }
   // 慢痛（B4）：还在流血的伤口 → 钝痛；愈合即停，不背着旧伤喊疼。

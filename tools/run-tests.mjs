@@ -103,6 +103,7 @@ const TESTS = [
   'brain-consolidate-llm-test.mjs',   // 巩固 LLM 供血：async chatFn 必须被 await（否则 String(Promise) 恒 []）
   'brain-sleep-watchdog-test.mjs',    // 睡眠看门狗：不误杀/命令在跑不打断/卡死按夜长结算不按 44h
   'brain-sleep-debt-test.mjs',        // 睡眠债还得够：一夜清干净/正常白天不到缺觉/真熬夜仍判困（2026-11-08「一直很累」）
+  'brain-wakefulness-test.mjs',           // 清醒阈值/假睡：醒来即清醒、忙时维持、闲下来半睡+自维护、消息能叫醒（2026-11-08）
   'brain-inner-loop-test.mjs',        // 念头→压力：增量语义（同一批念头不再每拍注压）+ 饱和累加 + 取用衰减
   'brain-heartbeat-gate-test.mjs',    // 心跳执行门：同一 since 只执行一次，不同 since 不误杀
   'brain-prompt-test.mjs',
