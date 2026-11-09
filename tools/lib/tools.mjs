@@ -20,7 +20,8 @@ import { config } from './config.mjs'
 import * as promises from './promises.mjs'
 import * as memory from './memory.mjs'
 import { swallow } from './swallow.mjs'
-import { searchVideos as biliSearch, playText } from './bili-web.mjs'
+import { searchVideos as biliSearch, searchArticles, articleDetail, playText } from './bili-web.mjs'
+import * as workbench from './workbench.mjs'
 
 const execFileAsync = promisify(execFile)
 
@@ -123,14 +124,32 @@ const RAW_CHAT_TOOLS = [
     type: 'function',
     function: {
       name: 'bili_search',
-      description: '在 B 站搜视频，拿标题/BV 号/UP 主/播放量。想聊某个话题却不知道具体是哪条视频、或者想找点东西看的时候，先用它搜，再用 watch_video 看那一条。',
+      description: '在 B 站搜东西：视频（标题/BV号/UP主/播放量）或专栏文章（标题/作者/阅读量/链接）。'
+        + '用户说"去B站找/看看…的视频或文章/专栏"时用这个。'
+        + 'type=video 只搜视频，type=article 只搜专栏，type=both（默认，两类都搜）。'
+        + '搜到视频想细看用 watch_video；搜到专栏想读正文用 bili_article。',
       parameters: {
         type: 'object',
         properties: {
           keyword: { type: 'string', description: '搜什么（可以就是普通一句话）' },
+          type: { type: 'string', enum: ['video', 'article', 'both'], description: '搜视频/专栏/两者，默认 both' },
           sort: { type: 'string', enum: ['relevance', 'pubdate', 'click'], description: '排序：相关/最新/最多播放，默认相关' },
         },
         required: ['keyword'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'bili_article',
+      description: '读一篇 B 站专栏的正文（bili_search type=article 搜到的 cv 号）。用户说"把那篇专栏念给我听/讲了什么"时用。',
+      parameters: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', description: '专栏号，cv123456 或纯数字' },
+        },
+        required: ['id'],
       },
     },
   },
@@ -187,10 +206,93 @@ const RAW_CHAT_TOOLS = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'find_files',
+      description: '在她的容器里找文件：按文件名，或按文件内容里的字面量。'
+        + '用户说"本地找一下/有没有关于…的文件/那个资料放哪了"时**先用这个再回答**，别直接说找不到。'
+        + '范围是她的家目录（记忆、日记、素材、下载的文档、脚本、日志）。',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: '要找的名字片段，或内容里的字面量' },
+          mode: { type: 'string', enum: ['name', 'content'], description: '按文件名（默认）还是按文件内容' },
+          dir: { type: 'string', description: '从哪个目录开始，默认整个家目录；可以给 .data/diary 这种相对路径' },
+          limit: { type: 'number', description: '最多几条，默认 12' },
+        },
+        required: ['query'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'read_file',
+      description: '读她容器里一个文本文件（带行号，可分页）。find_files 找到之后用它看内容；用户让她"看看那个文件写的什么"时用。',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: '文件路径（相对家目录或绝对路径，必须在容器里）' },
+          from: { type: 'number', description: '从第几行开始，默认 1' },
+          lines: { type: 'number', description: '读多少行，默认 120（最多 400）' },
+        },
+        required: ['path'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'write_file',
+      description: '把内容写进她容器里的文件（笔记、草稿、脚本、跑出来的结果）。append=true 是追加。'
+        + '她的代码目录是只读的 —— 要改自己的代码用 selfmod，不要用这个。',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: '写到哪（相对家目录的路径，如 .data/notes/统计.md）' },
+          text: { type: 'string', description: '要写的内容' },
+          append: { type: 'boolean', description: 'true=追加到末尾，默认覆盖' },
+        },
+        required: ['path', 'text'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'run_command',
+      description: '在她的容器里跑一条命令（不走 shell，不支持管道/重定向）：统计、格式转换、跑她刚写好的脚本。'
+        + '可用：node / python3 / ffmpeg / git(只读) / grep / find / sed(不改文件) / jq / tar 等；'
+        + '不许 rm、sudo、docker、ssh。跑不超过 8 秒，长活先写成脚本再后台跑。',
+      parameters: {
+        type: 'object',
+        properties: {
+          cmd: { type: 'string', description: '命令行，如 "python3 x.py" 或 "wc -l .data/sent-log.json"' },
+          workdir: { type: 'string', description: '在哪个目录跑，默认家目录' },
+          timeoutMs: { type: 'number', description: '超时毫秒，默认 8000，最多 10000' },
+        },
+        required: ['cmd'],
+      },
+    },
+  },
 ]
 
+/** 工作台四件（配置里能单独关，见 DEFAULTS.workbench）。 */
+const WORKBENCH_TOOLS = new Set(['find_files', 'read_file', 'write_file', 'run_command'])
+
 /** 出口：按**当前机器真的具备的能力**过滤（清单即承诺）。 */
-export const CHAT_TOOLS = RAW_CHAT_TOOLS.filter((t) => t?.function?.name !== 'browse_page' || HAS_BROWSER)
+export const CHAT_TOOLS = RAW_CHAT_TOOLS.filter((t) => {
+  const n = t?.function?.name
+  if (n === 'browse_page') return HAS_BROWSER
+  if (WORKBENCH_TOOLS.has(n)) {
+    const w = config().workbench || {}
+    if (w.enabled === false) return false
+    if (n === 'run_command' && w.exec === false) return false
+    if (n === 'write_file' && w.write === false) return false
+  }
+  return true
+})
 
 /** 跑一条 bot CLI（限时、限输出）。 */
 async function runCli(args, timeoutMs = 60000) {
@@ -295,14 +397,20 @@ export async function runTool(name, args = {}) {
         const q = String(a.q || '').trim()
         if (!q) return { ok: false, result: '没给关键词。' }
         if (mode === 'fetch') {
-          // 内置浏览器优先（JS 渲染/双设备身份），失败自动落回 web fetch（curl 扒静态）
-          const b = await runCli(['browser', 'read', q], 90000)
-          if (b.ok) return { ok: true, result: String(b.out || '').slice(0, 1800) }
-          const r = await runCli(['web', 'fetch', q], 60000)
-          if (!r.ok) return { ok: false, result: `上网没成：${(r.err || r.out || b.err || '').slice(0, 200)}` }
+          // 2026-11-09：能力不存在就别去够它。容器里没有 chromium（hasChromium=false），
+          // 旧代码仍然先跑一次 `browser read`（spawn 立刻失败）再落回 web fetch ——
+          // 白烧一次进程，而且在 12 秒的工具预算里还要靠外面 Promise.race 硬杀。
+          // 另外 90s/60s 的超时本来就超过单个工具预算，孤儿进程会留在容器里。
+          const BUDGET = 9000
+          if (HAS_BROWSER) {
+            const b = await runCli(['browser', 'read', q, '--device', 'auto'], BUDGET)
+            if (b.ok) return { ok: true, result: String(b.out || '').slice(0, 1800) }
+          }
+          const r = await runCli(['web', 'fetch', q], BUDGET)
+          if (!r.ok) return { ok: false, result: `上网没成：${(r.err || r.out || '').slice(0, 200)}` }
           return { ok: true, result: String(r.out || '').slice(0, 1800) }
         }
-        const r = await runCli(['web', 'search', q], 90000)
+        const r = await runCli(['web', 'search', q], 9000)
         if (!r.ok) return { ok: false, result: `上网没成：${(r.err || r.out || '').slice(0, 200)}` }
         const text = String(r.out || '').slice(0, 2400)
         // 工具要交代"接下来怎么用"（同 bili_search 的教训）：搜到不给她说清楚，
@@ -320,21 +428,65 @@ export async function runTool(name, args = {}) {
         if (!kw) return { ok: false, result: '没给关键词。' }
         const sortMap = { relevance: 'totalrank', pubdate: 'pubdate', click: 'click' }
         const order = sortMap[String(a.sort || 'relevance')] || 'totalrank'
-        let items = []
-        try {
-          items = await biliSearch(kw, { order, limit: 6 })
-        } catch (e) {
-          return { ok: false, result: 'B 站搜索没成：' + String(e?.message || e).slice(0, 80) }
+        const type = ['video', 'article'].includes(a.type) ? a.type : 'both'
+        const parts = []
+        const errs = []
+        if (type !== 'article') {
+          try {
+            const items = await biliSearch(kw, { order, limit: 6 })
+            if (items.length) {
+              parts.push('【视频 ' + items.length + ' 条】\n' + items.map((v, i) => (i + 1) + '. ' + v.title + '\n   ' + v.bvid + ' · ' + v.author + ' · ' + playText(v.play) + '播放' + (v.duration ? ' · ' + v.duration : '')).join('\n'))
+            } else {
+              parts.push('【视频】没搜到')
+            }
+          } catch (e) { errs.push('视频：' + String(e?.message || e).slice(0, 60)) }
         }
-        if (!items.length) return { ok: true, result: 'B 站没搜到「' + kw + '」的视频。' }
-        const lines = items.map((v, i) => (i + 1) + '. ' + v.title + '\n   ' + v.bvid + ' · ' + v.author + ' · ' + playText(v.play) + '播放' + (v.duration ? ' · ' + v.duration : ''))
-        // 末尾这句是给模型的**用法提示**：实测她搜到了却回"没搜到真叫这个名字的UP主"，
-        // 因为工具结果只有列表、没说"接下来该怎么用"。工具要承诺结果，也要交代用法。
+        if (type !== 'video') {
+          try {
+            const arts = await searchArticles(kw, { order, limit: 6 })
+            if (arts.length) {
+              parts.push('【专栏 ' + arts.length + ' 篇】\n' + arts.map((x, i) => (i + 1) + '. ' + x.title + '\n   cv' + x.id + ' · ' + x.author + ' · ' + playText(x.view) + '阅读' + '\n   ' + x.url).join('\n'))
+            } else {
+              parts.push('【专栏】没搜到')
+            }
+          } catch (e) { errs.push('专栏：' + String(e?.message || e).slice(0, 60)) }
+        }
+        if (!parts.length) return { ok: false, result: 'B 站搜索没成：' + (errs.join('；') || '没有结果') }
+        const hasHit = /【(视频|专栏) [1-9]/.test(parts.join('\n'))
+        if (!hasHit) return { ok: true, result: 'B 站没搜到「' + kw + '」。' + (errs.length ? '（' + errs.join('；') + '）' : '') }
         return {
           ok: true,
-          result: '「' + kw + '」在 B 站搜到 ' + items.length + ' 条：\n' + lines.join('\n')
-            + '\n（挑 1~2 条最对题的，把标题和 BV 号说给他；想细看就用 watch_video。别只回"我去找找"。）',
+          result: '「' + kw + '」\n' + parts.join('\n\n') + (errs.length ? '\n（没成的那部分：' + errs.join('；') + '）' : '')
+            + '\n（挑 1~2 条最对题的，把标题和 BV 号/cv 号说给他；视频细看用 watch_video，专栏正文用 bili_article。别只回"我去找找"。）',
         }
+      }
+
+      case 'bili_article': {
+        const id = String(a.id || '').trim()
+        if (!id) return { ok: false, result: '没给专栏号。' }
+        try {
+          const d = await articleDetail(id)
+          return {
+            ok: true,
+            result: `${d.title} · ${d.author}${d.pubdate ? ' · ' + new Date(d.pubdate * 1000).toLocaleDateString('zh-CN') : ''} · ${d.words} 字\n${d.url}\n\n${d.text}`,
+          }
+        } catch (e) {
+          return { ok: false, result: '专栏没读成：' + String(e?.message || e).slice(0, 100) }
+        }
+      }
+
+      case 'find_files':
+      case 'read_file':
+      case 'write_file':
+      case 'run_command': {
+        const w = config().workbench || {}
+        if (w.enabled === false) return { ok: false, result: '工作台被关掉了（config.workbench.enabled=false），我现在碰不了文件。' }
+        if (name === 'run_command' && w.exec === false) return { ok: false, result: '跑命令这块被关掉了（config.workbench.exec=false）。' }
+        if (name === 'write_file' && w.write === false) return { ok: false, result: '写文件这块被关掉了（config.workbench.write=false）。' }
+        if (name === 'find_files') return workbench.findFiles(a)
+        if (name === 'read_file') return workbench.readText(a)
+        if (name === 'write_file') return workbench.writeText(a)
+        return workbench.execCommand(a)
       }
 
       case 'watch_video': {

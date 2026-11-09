@@ -127,3 +127,75 @@ export async function videoInfo(bvid) {
 }
 
 export { playText, durText, clean as cleanBiliText }
+
+/**
+ * 搜专栏（B 站「专栏」= read/cv…，和视频是两套结果）。
+ * 2026-11-09：用户要"去 B 站找视频和专栏"，原先只有 search_type=video，
+ * 她只能如实回"专栏我搜不到"。同一个搜索接口换个 search_type 就有，实测可用。
+ */
+export async function searchArticles(keyword, { order = 'totalrank', limit = 6 } = {}) {
+  const kw = String(keyword || '').trim()
+  if (!kw) return []
+  const d = await biliJson('/x/web-interface/search/type', { search_type: 'article', keyword: kw, page: 1, order })
+  return (d?.result || [])
+    .filter((x) => x && x.id)
+    .slice(0, Math.max(1, limit))
+    .map((x) => ({
+      id: String(x.id),
+      title: clean(x.title),
+      author: clean(x.author),
+      desc: clean(x.desc).slice(0, 200),
+      view: Number(x.view || 0),
+      like: Number(x.like || 0),
+      url: 'https://www.bilibili.com/read/cv' + String(x.id),
+    }))
+}
+
+/**
+ * 一篇专栏的正文。
+ * 实测（2026-11-09）：`/x/article/viewinfo` 直接 -400，`/x/article/view?id=` 才返回内容；
+ * 专栏页本身是 SPA，静态抓只能拿到空壳（所以「网页抓取」这条路走不通，必须走接口）。
+ * 接口短时间内连打会 -509，这里 1 小时缓存 + 400ms 节流。
+ */
+const _artCache = new Map()
+let _artAt = 0
+/**
+ * -509（请求过于频繁）是接口自己的节流，不是我们写错 —— 硬失败会让她在 QQ 里回
+ * "专栏读不了"，然后用户以为能力不可用。等 1.2 秒再试一次，把可见失败率压下去。
+ */
+async function retryFreq(fn, tries = 2, waitMs = 1200) {
+  let last = null
+  for (let i = 0; i < tries; i++) {
+    try { return await fn() } catch (e) {
+      last = e
+      const msg = String(e?.message || e)
+      if (i === tries - 1 || !/频繁|-509/.test(msg)) throw e
+      await new Promise((s) => setTimeout(s, waitMs))
+    }
+  }
+  throw last
+}
+export async function articleDetail(id) {
+  const cid = String(id || '').replace(/^cv/i, '').trim()
+  if (!/^\d+$/.test(cid)) throw new Error('专栏号不对（应该是数字或 cv 号）')
+  const hit = _artCache.get(cid)
+  if (hit && Date.now() - hit.at < 60 * 60_000) return hit.d
+  const wait = 400 - (Date.now() - _artAt)
+  if (wait > 0) await new Promise((s) => setTimeout(s, wait))
+  _artAt = Date.now()
+  const d = await retryFreq(() => biliJson('/x/article/view', { id: cid }, { timeout: 6000 }))
+  const body = clean(d?.content || '')
+  const out = {
+    id: cid,
+    title: clean(d?.title),
+    author: clean(d?.author?.name),
+    summary: clean(d?.summary),
+    pubdate: Number(d?.publish_time || 0),
+    words: body.length,
+    text: body.slice(0, 6000),
+    url: 'https://www.bilibili.com/read/cv' + cid,
+  }
+  if (_artCache.size > 40) _artCache.clear()
+  _artCache.set(cid, { at: Date.now(), d: out })
+  return out
+}

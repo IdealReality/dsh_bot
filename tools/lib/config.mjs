@@ -86,6 +86,15 @@ export const DEFAULTS = {
     proxy: 'http://172.17.0.1:7890',    // 容器里走宿主 Clash；不需要就置空
     allowPrivate: [],                   // SSRF 防护例外名单：允许访问的内网主机名
   },
+  // 工作台（2026-11-09）：她在聊天里能不能碰文件系统/跑命令。
+  // 安全边界是**容器**（宿主其它数据根本没挂进来，uid=951、CapEff=0），
+  // 这三个开关管的是"要不要给她手"，不是"能不能越界"（越界由 sandbox.mjs 拒）。
+  // 想让她只聊不干活：enabled=false，工具清单里四个工作台工具直接消失。
+  workbench: {
+    enabled: true,       // find_files / read_file / write_file / run_command 总开关
+    exec: true,          // run_command（白名单 + 不走 shell + 8 秒上限）
+    write: true,         // write_file（代码目录只读，改代码走 selfmod）
+  },
   // 打小报告（看完好视频 → QQ 汇报给用户）。bili-watch / share-queue / tattle 都会读。
   tattle: { enabled: true, dailyMax: 3, minScore: 15 },
   // 专题研究（2026-11-07 用户要求）：她按六轴去 B站看一类视频并递归深挖。
