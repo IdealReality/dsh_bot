@@ -107,7 +107,10 @@ DNS 是这条链的**总闸**：`dnsmasq` 只监听 `172.17.0.1:53`，容器 `/e
 | 上传到 `uguu.se` / `tmpfiles.org` | **仍然放行**（她发图要用）——这是已知残留风险，见 §6 |
 
 要加新站点：`dsh-bot-egress add 域名`（立即刷新 dnsmasq + 防火墙）。
-要应急全开：`dsh-bot-egress open`；恢复：`dsh-bot-egress allowlist`（两种都实测过）。
+要应急全开：`dsh-bot-egress open`；恢复：`dsh-bot-egress allowlist`。两种都实测过：
+`open` 会把**解析器一起放开**（`server=/#/…`），否则会出现"防火墙开了、DNS 还是 NXDOMAIN"的假回退
+（第一版就踩了：只改 resolv.conf 不够，公网 53 本来就不通）。
+切换用 `systemctl restart dnsmasq` 而不是 reload —— SIGHUP 会保留旧缓存，NXDOMAIN 也被缓存住。
 
 ### 3.2 群聊里的私聊内容：有开关了，默认还是你 10-26 的口径
 
@@ -133,7 +136,7 @@ DNS 是这条链的**总闸**：`dnsmasq` 只监听 `172.17.0.1:53`，容器 `/e
 
 `dsh-bot-backup-audit` 补了三类判据（原来只比包内文件 vs 盘上文件，包停更也能全绿）：
 
-- 包年龄 > 30h → FAIL
+- 包年龄 > 26h → FAIL（日备 04:40 跑，26h = 一次漏跑就报；阈值可用 `AUDIT_MAX_HOURS` 临时覆盖）
 - 15 分钟快照最新一份 > 40 分钟 → FAIL（快照链断了）
 - `/home/backup-mirror` 各包缺失或 > 30h → FAIL
 
@@ -176,6 +179,11 @@ sudo tar -xzf /home/backup/dsh_bot/dsh-bot-infra-<时间戳>.tar.gz -C /
 | 其它容器 | agent2api healthy、agentapi/ntfy/rustdesk Up（未触碰它们所在网段的规则） |
 | 备份 | 15m 快照 EXIT=0；restore drill EXIT=0；audit EXIT=0 |
 | 真实业务 | 账本定时刷新（走 3066）、QQ 网关（3010）、TTS（9880）、浏览器（3070）均在本轮日志里正常 |
+| 真工具调用 | `bili_search`（专栏 6 篇）、`look_up`（360 搜索结果 3 条）、`find_files`/`read_file`/`run_command` 全部 ok |
+| 规则幂等 | 连跑 3 次：`DOCKER-USER` / `HOST_IN` 各只有 1 条跳转 |
+| 快照并发 | 三进程同时跑：两个被 flock 挡下（日志 `skip: previous run`），一个成功 |
+| 审计负例 | 把全部 `mind` 包挪走 → audit 退出码 1 + `NO PACKAGE`；放回 → 退出码 0 |
+| 回退演练 | `open` → 容器能访问 `pastebin.com`（200）；`allowlist` → 同 IP 立刻 blocked |
 
 ---
 
