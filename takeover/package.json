@@ -1,0 +1,21 @@
+{
+  "name": "dsh-takeover",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "cordis.patch.yml"
+  ],
+  "description": "Minimal persona takeover bundle: registers the dsh_bot complete system-prompt section for profiles without webServer (headless/tui).",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

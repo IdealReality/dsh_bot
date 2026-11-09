@@ -1,0 +1,4 @@
+# dsh-takeover —— bundle patch：把 takeover 插件插进 profile 的配置树。
+- insert:
+  - id: dsh-takeover
+    name: dsh-takeover
