@@ -1137,6 +1137,12 @@ export function capabilityBlock(cfg) {
     + (upgrade
       ? '真缺能力就自己补：`selfup backup` → 改 tools/ → `node --check` → 跑测试 → `selfup log "改了什么"`（造新命令 = 在 tools/commands/ 写 .mjs + 在 bot.mjs 的 COMMANDS 加一行）。'
       : '')
+    // 2026-11-09：工具链补了手（找文件/读/写/跑命令/读专栏/办公台），
+    // 但实测模型不知道"哪只手接哪件事"时会退回口头承诺或硬扛。这里只写分工，不列参数（参数在工具描述里）。
+    + '\n【哪只手接哪件事】找他机器上的东西（文件、日记、日志、素材）先用 `find_files` 再 `read_file`，别直接说"我找不到"；'
+    + 'B 站专栏用 `bili_search` 的 type=article，看完要正文用 `bili_article`（视频才用 watch_video）；'
+    + '一件要多步才做得完的活（整理一批文件、几篇文章做对比、写脚本反复调）用 `office_task` 立项，'
+    + '后台干完会主动跟他汇报 —— 别在聊天里硬扛成十几轮，也别假装已经做完了。'
     + '\n做不到的事只有一种说法：照实说"这个我现在看不了/做不了"，并说清卡在哪。**不许只回一句"这就去看"**。'
 }
 

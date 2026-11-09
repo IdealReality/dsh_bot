@@ -276,6 +276,25 @@ const RAW_CHAT_TOOLS = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'office_task',
+      description: '把一件需要多步才能做完的活交给你的办公台：写并跑脚本、做统计、整理一批文件、把几篇专栏/文章读完做对比、批量处理素材。'
+        + '你聊天里每件工具只有 12 秒，这种活必须立项交给后台，跑完会主动汇报给你爹。'
+        + '他说"帮我统计/整理/写个脚本/批量弄一下/把这几篇看完"这类多步活时用这个。'
+        + '调用后照实说"已经开工"，别现在硬做，也别假装已经做完了。',
+      parameters: {
+        type: 'object',
+        properties: {
+          goal: { type: 'string', description: '要做的这件事，一句话说清交付物（如"统计 .data/sent-log.json 里各人的回复条数，结果写成 md"）' },
+          steps: { type: 'number', description: '最多几步，默认 20' },
+          minutes: { type: 'number', description: '最多几分钟，默认 12' },
+        },
+        required: ['goal'],
+      },
+    },
+  },
 ]
 
 /** 工作台四件（配置里能单独关，见 DEFAULTS.workbench）。 */
@@ -285,6 +304,10 @@ const WORKBENCH_TOOLS = new Set(['find_files', 'read_file', 'write_file', 'run_c
 export const CHAT_TOOLS = RAW_CHAT_TOOLS.filter((t) => {
   const n = t?.function?.name
   if (n === 'browse_page') return HAS_BROWSER
+  if (n === 'office_task') {
+    if ((config().office || {}).enabled === false) return false
+    return (config().workbench || {}).enabled !== false   // 办公台靠工作台的手，手没了立项也没意义
+  }
   if (WORKBENCH_TOOLS.has(n)) {
     const w = config().workbench || {}
     if (w.enabled === false) return false
@@ -487,6 +510,24 @@ export async function runTool(name, args = {}) {
         if (name === 'read_file') return workbench.readText(a)
         if (name === 'write_file') return workbench.writeText(a)
         return workbench.execCommand(a)
+      }
+
+      case 'office_task': {
+        const goal = String(a.goal || '').replace(/\s+/g, ' ').trim()
+        if (!goal) return { ok: false, result: '没说要做什么。' }
+        const cfg = config().office || {}
+        if (cfg.enabled === false) return { ok: false, result: '办公台关着（config.office.enabled=false），接不了活。' }
+        const office = await import('./office.mjs')
+        const r = office.start({ goal, steps: a.steps, minutes: a.minutes })
+        if (!r.ok) return { ok: false, result: '立项没成：' + (r.reason || '未知原因') }
+        if (r.busy) {
+          return { ok: true, result: `手上还压着一件没干完（${r.id}）：「${r.goal}」。这件先排着，等那个收尾我就接着做。` }
+        }
+        return {
+          ok: true,
+          result: `已经开工（${r.id}）：「${goal}」。${r.worker ? '后台进程已经起来了，' : '后台进程没起来，但任务已经记下了，'}`
+            + '我在这边继续跟你说话，跑完主动告诉你。现在照实说"已经开始弄了"，别提前编结果。',
+        }
       }
 
       case 'watch_video': {

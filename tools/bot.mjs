@@ -66,6 +66,7 @@ const COMMANDS = {
   focus: '她决定"接下来这一段时间干什么"：focus web|bilibili|binge --min 25 ｜focus rest --min 40 ｜focus off ｜focus（看现在在干什么）',
   binge: '看番/看剧（真的看完一集）：binge --search "番名" | binge --show "番名" --ep 2 --go | binge --bvid BV1xx --go | binge --list',
   research: '专题研究（真的往下想）：research start --topic "题目" [--depth 3 --videos 14] → 后台按六轴找视频、递归深挖、跑完主动汇报 | status [--id] | list | report --id [--push] | stop --id | watchdog',
+  office: '办公台（多步活交给后台）：office start --goal "统计…结果写 md" [--steps 20 --minutes 12] → 后台真的动手、跑完 QQ 汇报 | list | status [--id] | report --id | stop --id | work --id',
   promises: '承诺账本：promises（列）| promises done <id> | promises fail <id> "为什么" | promises --due（到点的）',
   roster: '人物名册：roster 看最近见过的人 ｜ roster --who <号> --call 称呼 ｜ roster --who <号> --note "印象"',
   brain: '脑（v3）：brain doctor（8 条不变量体检）| brain stats | brain recall "线索" | brain consolidate [--llm] [--dry] | brain intents | brain facts | brain migrate [owner|lore|all] | brain eval [--calibrate] | brain self | brain emit "…" | brain tick',

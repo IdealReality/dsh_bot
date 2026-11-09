@@ -91,6 +91,7 @@ const BIN_OK = new Set([
   'ls', 'cat', 'wc', 'du', 'df', 'date', 'echo', 'sort', 'uniq', 'cut', 'tr',
   'head', 'tail', 'grep', 'find', 'sed', 'awk', 'basename', 'dirname', 'realpath',
   'tar', 'unzip', 'zip', 'pdftotext', 'pdfinfo', 'identify', 'convert', 'magick',
+  'git',   // 只放的只读子命令在 GIT_OK 里（log/status/diff/…）；写操作一律拒
 ])
 /** git 只放行只读子命令（写操作会让她的工作区状态漂移，且绕过 selfmod）。 */
 const GIT_OK = new Set(['log', 'status', 'diff', 'show', 'ls-files', 'blame', 'rev-parse', 'shortlog'])

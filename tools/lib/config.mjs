@@ -95,6 +95,13 @@ export const DEFAULTS = {
     exec: true,          // run_command（白名单 + 不走 shell + 8 秒上限）
     write: true,         // write_file（代码目录只读，改代码走 selfmod）
   },
+  // 办公台（2026-11-09）：聊天里只立项，后台独立进程把多步活干完再汇报。
+  // 预算上限是**上界**：到点带着已有结果收尾，不无限跑。
+  office: {
+    enabled: true,
+    maxSteps: 20,        // 最多 20 步（一步 = 一次模型决策 + 至多若干工具调用）
+    maxMinutes: 12,      // 最多 12 分钟
+  },
   // 打小报告（看完好视频 → QQ 汇报给用户）。bili-watch / share-queue / tattle 都会读。
   tattle: { enabled: true, dailyMax: 3, minScore: 15 },
   // 专题研究（2026-11-07 用户要求）：她按六轴去 B站看一类视频并递归深挖。
