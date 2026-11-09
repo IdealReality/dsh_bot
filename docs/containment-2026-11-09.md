@@ -133,6 +133,7 @@ DNS 是这条链的**总闸**：`dnsmasq` 只监听 `172.17.0.1:53`，容器 `/e
 | `dsh-bot-snapshot-q15` | 每 15 分钟 | `rsync --link-dest` 硬链接快照 `data-home`（225MB 基线，未变文件共享 inode）。保留 96 份 = 24h 窗口；整点那份另存 `hourly-*` 便于找点 |
 | `dsh-bot-restore-drill` | 每周日 05:20 | **真解包**最新 code/mind/work 三个包 → 查核心件（`persona.md`、`brain/self/me.md`、`AGENTS.md`、日记）→ 对 391 个 `.mjs` 逐个 `node --check` → 再查 q15 最新一份 |
 | `dsh-bot-infra` 包 | 每天 | 新增：`/usr/local/bin/dsh-bot-*`、`dnsmasq.conf`、`dsh-bot-allow.txt`、egress 模式、systemd 单元 —— 宿主安全件也能还原 |
+| `dsh-bot-home` 包 | 每天 | **2026-11-09 补**：`.dsh` 里非可重建的部分 —— `sessions/`（她的网页会话）、`bot-work/creative/`（6 篇小说）、`.credentials.yaml`（DSH 登录）、storages/profiles。此前这些**一个都不在备份里**（见 §4.4） |
 
 `dsh-bot-backup-audit` 补了三类判据（原来只比包内文件 vs 盘上文件，包停更也能全绿）：
 
@@ -152,7 +153,30 @@ backup audit ：code/mind/work/infra 均 fresh；q15 fresh；audit result: OK（
 > 演练第一版就抓到一个真错：我假设核心件是 `brain/self.md`，实际是 `brain/self/me.md` 目录。
 > 这正是"备份存在 ≠ 能还原"的证据 —— 顺手改掉了。
 
-### 4.3 还原怎么做
+### 4.3 还原验证（2026-11-09 真跑了一遍，不是只看包在不在）
+
+| 步骤 | 结果 |
+|---|---|
+| 解包四件套（code/mind/work/home）到暂存目录 | 392 个 `.mjs` / 1158 个记忆文件 / 6 篇小说 / 30 个 sessions / `.credentials.yaml` 均在 |
+| 关键文件与现网比对 sha256 | `persona.md`、`brain/self/me.md`、`facts.json`、两本日记：**全部 same** |
+| 用还原副本启动她的代码（隔离容器、`--network none`、TZ=Asia/Shanghai） | `persona` 装配 5124 字、无人格回退告警；`selftest` 只有 B站登录项因无网络失败（SESSDATA 本身在 `credentials.json` 里） |
+| 还原副本上跑**完整**测试套 | **118 套全绿，EXIT=0**（132s） |
+| 现网灾难演练 A：删 `persona.md` → 从 15m 快照还原 | hash 与灾难前一致，现网装配立刻恢复 |
+| 现网灾难演练 B：删私人日记 → 从每日 work 包还原 | 与灾难前**完全一致** |
+| 审计负例 | 抽走 mind 包 → audit 退出 1；放回 → 0 |
+
+> 口径说明：还原副本 70MB vs 现网 4G，是因为备份排除了可重建项
+> （`asr-venv` 2.8G、`asr-models` 464M、`browser-profile` 145M、`archive` 47M、`pyenv` 29M、`fonts` 18M），
+> 审计的 `mind: MISSING 0` 证明"该备的都在"。
+
+### 4.4 这轮验证抓到的真缺口
+
+三件套只覆盖 `data/bot-work` 的 3 个文件。**她写的 6 篇小说（`creative/`）、30 个网页会话（`sessions/`）、
+DSH 登录凭据（`.credentials.yaml`）当时不在任何包里** —— 宿主盘坏掉就永久消失。
+现已新增 `dsh-bot-home` 包，并把这三类写进审计与还原演练的硬判据
+（缺任一项 → audit/drill 直接非 0）。
+
+### 4.5 还原怎么做
 
 ```bash
 # 她的记忆/人格（最快的点：15 分钟粒度）
