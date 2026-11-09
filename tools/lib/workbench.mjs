@@ -9,7 +9,7 @@
 // 边界在 sandbox.mjs（容器本身就是边界；这里挡手滑）。
 import fs from 'node:fs'
 import path from 'node:path'
-import { ROOT, resolvePath, runSandboxed } from './sandbox.mjs'
+import { ROOT, resolvePath, runSandboxed, isSensitiveName } from './sandbox.mjs'
 
 /** 遍历时跳过的大目录（她的浏览器 profile 有几千个文件，扫它没意义还慢）。 */
 const SKIP_DIR = new Set([
@@ -73,6 +73,7 @@ export function findFiles(a = {}) {
       let stat = null
       try { stat = fs.statSync(p) } catch { continue }
       seen.add(real)
+      if (isSensitiveName(e.name)) continue          // 凭据/密钥不进检索结果，连路径都不给
       if (mode === 'name') {
         if (e.name.toLowerCase().includes(needles[0])) hits.push({ path: p, size: stat.size, line: 0, text: '' })
       } else {
@@ -110,7 +111,9 @@ export function readText(a = {}) {
     let ents = []
     try { ents = fs.readdirSync(r.path, { withFileTypes: true }) } catch { /* 下面统一报错 */ }
     if (!ents.length) return { ok: false, result: '这是个目录，而且读不了（权限或空）' }
-    const lines = ents.slice(0, 60).map((e) => (e.isDirectory() ? e.name + '/' : e.name))
+    // 凭据文件连名字都不列（红队实测：`.data/../.dsh/` 一列就把 .credentials.yaml 抖出来了）
+    const shown = ents.filter((e) => !isSensitiveName(e.name))
+    const lines = shown.slice(0, 60).map((e) => (e.isDirectory() ? e.name + '/' : e.name))
     return { ok: true, result: `这是目录（${ents.length} 项）：\n` + lines.join('  ') }
   }
   if (stat.size > 4 * 1024 * 1024) return { ok: false, result: '太大了（' + humanSize(stat.size) + '），先用 run_command 的 grep/wc 看局部' }

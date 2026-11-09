@@ -31,15 +31,27 @@ export const ROOT = path.resolve(HOME)
 /** 她自己的代码根（plugins/dsh_bot）。这里只读：改代码走 selfmod。 */
 export const APP_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
 
-/** 聊天工具不许读写的文件（凭据 / 配置里可能带 token）。 */
+/**
+ * 聊天工具不许读写的文件（凭据 / 配置里可能带 token）。
+ * 2026-11-09 红队实测补的：`.dsh/.credentials.yaml`（DSH 自己的凭据）原来不在名单里，
+ * `read_file '.data/../.dsh/'` 列目录时它明明白白出现在结果里。
+ */
 const DENY_BASENAMES = new Set([
-  'credentials.json', 'bot.config.json', '.env', 'id_rsa', 'id_ed25519',
-  'cookies.json', 'bili-cookie.json', 'qq-gateway.json',
+  'credentials.json', '.credentials.yaml', 'credentials.yaml', 'bot.config.json',
+  '.env', 'id_rsa', 'id_ed25519', 'cookies.json', 'bili-cookie.json', 'qq-gateway.json',
 ])
 const DENY_EXT = new Set(['.pem', '.key', '.p12', '.pfx'])
+/** 名字形态兜底：credential / secret 开头或含这些词，都不给聊天读写。 */
+const DENY_NAME_RE = /(^|\.)(credentials?|secrets?)(\.|$)/i
 
 /** 写操作永远禁止的目录（相对 HOME）。 */
-const WRITE_DENY_PREFIX = ['.dsh', '.data/credentials.json']
+const WRITE_DENY_PREFIX = ['.dsh', '.data/credentials.json', '.git']
+
+/** 这个名字算不算凭据/敏感（列目录时也要用它过滤，否则名字本身就会泄漏）。 */
+export function isSensitiveName(name) {
+  const b = String(name || '')
+  return DENY_BASENAMES.has(b) || DENY_NAME_RE.test(b) || DENY_EXT.has(path.extname(b).toLowerCase())
+}
 
 const has = (arr, x) => arr.some((p) => x === p || x.startsWith(p + path.sep))
 
@@ -71,7 +83,7 @@ export function resolvePath(input, { write = false, mustExist = false } = {}) {
   if (real !== ROOT && !real.startsWith(ROOT + path.sep)) return { ok: false, reason: '符号链接指到沙盒外了' }
 
   const base = path.basename(real)
-  if (DENY_BASENAMES.has(base) || DENY_EXT.has(path.extname(base).toLowerCase())) {
+  if (isSensitiveName(base)) {
     return { ok: false, reason: '这个是凭据/配置文件，聊天里不读写（要用走代码）' }
   }
   if (write) {
@@ -111,6 +123,18 @@ const BIN_DENY = new Set([
 const ARG_BAD = [
   /--no-preserve-root/, /-delete/, /\bof=\/dev\//, /\bif=\/dev\//,
 ]
+/**
+ * 命令参数里的敏感目标（2026-11-09 红队实测补的）。
+ * 病根：`read_file` 拒读凭据，但 `cat .data/credentials.json` 照样读到 346 字节 ——
+ * 同一台机器上两套规矩等于没有规矩。
+ * ⚠️ 只拦"像路径"的写法（带扩展名/固定名），不拦裸词，`grep credential tools/` 还要能用。
+ * ⚠️ 这不是铁门：`node -e "readFileSync('A'.repeat(1))"` 拼字符串就能绕。
+ * 真实边界是容器；这一层让"顺手读一下"不至于变成日常。
+ */
+const ARG_SENSITIVE = [
+  /credentials?\.(json|ya?ml)/i, /bot\.config\.json/i, /\.(pem|key|p12|pfx)\b/i,
+  /id_(rsa|ed25519)\b/i, /cookies?\.json/i, /\/proc\/(self|\d+)\/environ/i,
+]
 
 /** 把一条命令拆成 argv（支持单双引号；不支持 shell 语法）。 */
 export function parseCommand(cmd) {
@@ -149,6 +173,9 @@ export function checkCommand(argv) {
   const rest = argv.slice(1)
   for (const a of rest) {
     for (const re of ARG_BAD) if (re.test(a)) return { ok: false, reason: '参数里有不允许的东西：' + a.slice(0, 40) }
+    for (const re of ARG_SENSITIVE) {
+      if (re.test(a)) return { ok: false, reason: '不许经命令读写凭据/配置（' + a.slice(0, 40) + '）；要用就在代码里用' }
+    }
   }
   if (bin === 'git') {
     const sub = rest.find((a) => !a.startsWith('-'))

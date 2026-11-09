@@ -20,8 +20,16 @@
 // 触发后由编排层带工具重写一次 —— 只重写一次，不循环。
 import { swallow } from './swallow.mjs'
 
+// 2026-11-09（十遍第 1 遍）：工具面从 9 个扩到 14 个之后，这道闸的判据必须跟着走。
+// 旧集合只有 look_up/bili_search/watch_video/browse_page —— 她调 find_files 查到了本地文件、
+// 或调 bili_article 读到了专栏正文，闸门仍判"该查没查"，于是拿 SEARCH_HINT 再重写一遍：
+// 既白烧一次 LLM，又可能把已经查对的话改成"我这就去搜"。
+// 判据改成「这一轮有没有真的动手取过信息」。
 /** 检索类工具：调过任意一个就不算"该查没查"。 */
-export const SEARCH_TOOLS = new Set(['look_up', 'bili_search', 'watch_video', 'browse_page'])
+export const SEARCH_TOOLS = new Set([
+  'look_up', 'bili_search', 'bili_article', 'watch_video', 'browse_page',
+  'find_files', 'read_file', 'run_command', 'office_task',
+])
 
 /** 外部事实信号：命中才算"查得出来"的问题。 */
 const EXTERNAL = /(B站|b站|bilibili|视频|UP主|up主|新闻|最新|价格|多少钱|几块|版本|更新|发布|是什么|是啥|哪个|哪条|哪部|有没有|怎么样|测评|攻略|教程|攻略|怎么用|怎么做|怎么弄|怎么装|怎么下载|谁做的|谁唱|谁写)/
@@ -69,6 +77,7 @@ export function needsSearch({ userText = '', percept = null, toolTrace = [], ans
 
 /** 附在最后一条 user 消息上的重写指令（不新增 system，避免打乱采样）。 */
 export const SEARCH_HINT = '\n\n【先查再说】\n'
-  + '· 这题你不确定：现在就调 look_up 或 bili_search，看完再回答。\n'
+  + '· 这题你不确定：现在就调工具，看完再回答（网上 → look_up；B站视频 → bili_search；'
+  + 'B站专栏 → bili_search type=article 再 bili_article；他机器上的文件 → find_files / read_file）。\n'
   + '· 不许说"我去找找 / 要不我搜一下 / 要不要我查"——要么现在查，要么直说不知道。\n'
-  + '· 查到几条就挑最对题的 1~2 条，把标题（和 BV 号）说给他。'
+  + '· 查到几条就挑最对题的 1~2 条，把标题（和 BV 号/cv 号）说给他。'

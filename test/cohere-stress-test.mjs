@@ -235,6 +235,12 @@ console.log('\n[该查没查]')
   ok('外部事实问题 → 该查', q('大肥鱼小课堂是啥？B站上有吗').needed === true, JSON.stringify(q('大肥鱼小课堂是啥？B站上有吗')))
   ok('调过 bili_search → 不用再查', q('B站上有大肥鱼吗？', { toolTrace: [{ name: 'bili_search', ok: true }] }).needed === false, '')
   ok('调过 look_up → 不用再查', q('这个版本多少钱？', { toolTrace: [{ name: 'look_up', ok: true }] }).needed === false, '')
+  // 2026-11-09（十遍第 1 遍）：工具面扩到 14 个后，闸门把"查过了"的判据也放宽到
+  // 一切真的取过信息的动作 —— 否则 find_files/bili_article 查到的东西还要被要求再搜一遍。
+  ok('调过 bili_article → 不用再查', q('B站那篇专栏讲了啥？', { toolTrace: [{ name: 'bili_article', ok: true }] }).needed === false, '')
+  ok('调过 find_files → 不用再查', q('本地有没有南京的资料？', { toolTrace: [{ name: 'find_files', ok: true }] }).needed === false, '')
+  ok('调过 office_task → 不用再查', q('那个统计做好了吗？', { toolTrace: [{ name: 'office_task', ok: true }] }).needed === false, '')
+  ok('提示语覆盖新工具', /find_files/.test(G.SEARCH_HINT) && /bili_article/.test(G.SEARCH_HINT), '')
   ok('问她自己 → 不查', q('你是谁？').needed === false, JSON.stringify(q('你是谁？')))
   ok('问感受 → 不查', q('你累不累？').needed === false, JSON.stringify(q('你累不累？')))
   ok('普通陈述 → 不查', q('今天天气不错').needed === false, JSON.stringify(q('今天天气不错')))

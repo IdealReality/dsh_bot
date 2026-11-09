@@ -73,6 +73,18 @@ ok(chk('sed -i s/a/b/ x.md').ok === false, 'sed -i → 拒')
 ok(chk('find . -name "*.json" -exec rm {} ;').ok === false, 'find -exec → 拒')
 ok(sb.parseCommand('grep -E "a|b" f').ok === true, '"a|b" 不算 shell 管道（execFile 没有 shell 语义）')
 
+// ── 3b. 红队实测补的（2026-11-09 十遍第 3 遍）──────────────────────────────
+// 病根：read_file 拒读凭据，但 `cat .data/credentials.json` 读到 346 字节；
+// `.dsh/.credentials.yaml` 也不在名单里。同一台机器两套规矩 = 没有规矩。
+fs.mkdirSync(path.join(TMP, '.dsh'), { recursive: true })
+fs.writeFileSync(path.join(TMP, '.dsh', '.credentials.yaml'), 'k: v\n')
+ok(sb.isSensitiveName('.credentials.yaml') && sb.isSensitiveName('credentials.json'), '敏感文件名识别（含 .credentials.yaml）')
+ok(sb.resolvePath('.dsh/.credentials.yaml', {}).ok === false, '.dsh/.credentials.yaml → 拒读')
+ok(chk('cat .data/credentials.json').ok === false, 'cat 凭据 → 拒（命令与 read_file 同一套规矩）')
+ok(chk('cat /proc/self/environ').ok === false, '/proc/self/environ → 拒')
+ok(chk('grep credential tools/x.mjs').ok === true, '裸词 credential 仍可 grep（只拦路径形态）')
+ok(sb.resolvePath('.git/config', { write: true }).ok === false, '写 .git → 拒（不污染 HOME 的 git 语义）')
+
 // ── 4. 工具层：读写与限界 ───────────────────────────────────────────────────
 const w1 = wb.writeText({ path: '.data/notes/t.md', text: 'hello\n' })
 ok(w1.ok === true, 'write_file 正常写 → 成功')

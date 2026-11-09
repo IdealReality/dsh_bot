@@ -131,6 +131,7 @@ const TESTS = [
   'lock-tri-state-test.mjs',     // 2026-11-03：锁三态语义（O_EXCL/死锁抢占/故障降级）
   'llm-physio-test.mjs',         // 2026-11-03：B7 表达代谢（brief/直连双源、超支分支、永不抛）
   'llm-usage-test.mjs',          // 2026-11-04 补注册：直连记账（此前单跑过、全套从未跑它）
+  'office-state-test.mjs',       // 2026-11-09：跨进程并发只允许 1 个立项 / 僵尸回收 / stop 语义
   'workbench-test.mjs',          // 2026-11-09：工作台边界（路径穿越/软链逃逸/凭据/代码只读/命令白名单/超时）
 ]
 

@@ -21,6 +21,7 @@ import { config } from './config.mjs'
 import * as llm from './llm.mjs'
 import { CHAT_TOOLS, runTool } from './tools.mjs'
 import { sendOwnerQQ } from './notify.mjs'
+import { withLock } from '../brain/store.mjs'
 
 const DIR = () => dataPath('office')
 const FILE = () => path.join(DIR(), 'tasks.json')
@@ -42,19 +43,46 @@ function writeAll(s) {
   fs.writeFileSync(t, JSON.stringify(s, null, 2))
   fs.renameSync(t, FILE())
 }
+// 跨进程互斥：办公台的状态是**三个进程**在改（聊天里 start、worker 每步 patch、用户 stop）。
+// 2026-11-09（十遍第 5 遍）实测：read-modify-write 没有锁时并发会丢更新 ——
+// worker 写完 trace，恰好被一条 start 覆盖，进度就没了。全部走 brain/store 的 withLock。
+const LOCK = 'office-tasks'
 function patch(id, fn) {
-  const s = readAll()
-  const row = (s.rows || []).find((r) => r.id === id)
-  if (!row) return null
-  fn(row)
-  writeAll(s)
-  return row
+  const out = withLock(LOCK, () => {
+    const s = readAll()
+    const row = (s.rows || []).find((r) => r.id === id)
+    if (!row) return null
+    fn(row)
+    writeAll(s)
+    return row
+  })
+  return out || null
+}
+
+/**
+ * 回收僵尸任务（2026-11-09 第 5 遍）。
+ * 病根：worker 被 docker 重启/被杀时来不及改状态，任务永远停在 running ——
+ * 于是 `playing()` 一直为真，**此后所有办公任务都被"手上还压着一件"挡掉**。
+ * 判据用预算 + 2 分钟：过了这个点，进程一定不在了。
+ */
+function reapRows(s, now = Date.now()) {
+  let changed = false
+  for (const r of s.rows || []) {
+    if (r.state !== 'running' && r.state !== 'queued') continue
+    const budget = (Number(r.minutes) || 12) * 60_000 + 120_000
+    const since = Number(r.state === 'running' ? r.startedAt : r.createdAt) || 0
+    if (!since || now - since > budget) {
+      r.state = 'failed'
+      r.error = r.state === 'queued' ? '进程没起来（排队太久）' : '进程没了（超时未收尾）'
+      r.endedAt = now
+      changed = true
+    }
+  }
+  return changed
 }
 
 let seq = 0
 const newId = () => 'of-' + Date.now().toString(36) + '-' + (++seq).toString(36)
-
-const playing = () => (readAll().rows || []).find((r) => r.state === 'running' || r.state === 'queued') || null
 
 /**
  * 立项：只写状态 + 起进程，必须快（聊天工具预算 12 秒，实测 <1 秒）。
@@ -66,17 +94,25 @@ export function start(a = {}) {
   if (goal.length > 800) return { ok: false, reason: '目标太长了，拆小一点' }
   const cfg = config().office || {}
   if (cfg.enabled === false) return { ok: false, reason: '办公台被关掉了（config.office.enabled=false）' }
-  const running = playing()
-  if (running) return { ok: true, busy: true, id: running.id, goal: running.goal, note: '手上还有一件没干完' }
   const row = {
     id: newId(), goal, state: 'queued',
     steps: Math.min(40, Math.max(1, Number(a.steps) || Number(cfg.maxSteps) || 20)),
     minutes: Math.min(60, Math.max(1, Number(a.minutes) || Number(cfg.maxMinutes) || 12)),
     createdAt: Date.now(), startedAt: 0, endedAt: 0, step: 0, trace: [], final: '', error: '',
   }
-  const s = readAll()
-  s.rows = [...(s.rows || []), row].slice(-80)
-  writeAll(s)
+  // 「检查有没有人在干 + 写进去」必须原子：两个 start 同时进来时，旧写法两边都看到空档，
+  // 于是同时起两个 worker，第二个会覆盖第一个的 trace（实测竞态窗口 ≈ 3ms）。
+  const claimed = withLock(LOCK, () => {
+    const s = readAll()
+    reapRows(s)
+    const busy = (s.rows || []).find((r) => r.state === 'running' || r.state === 'queued')
+    if (busy) { writeAll(s); return { busy: true, id: busy.id, goal: busy.goal, note: '手上还有一件没干完' } }
+    s.rows = [...(s.rows || []), row].slice(-80)
+    writeAll(s)
+    return { ok: true }
+  })
+  if (!claimed) return { ok: false, reason: '状态锁超时（另一个进程正在改办公台），稍后再试' }
+  if (claimed.busy) return { ok: true, ...claimed }
   let worker = false
   try {
     const p = spawn(process.execPath, [BOT(), 'office', 'work', '--id', row.id], {
@@ -99,6 +135,7 @@ export async function work(id) {
   if (!row0) return { ok: false, reason: '没这个任务' }
   if (row0.state === 'running') return { ok: false, reason: '已经在跑了' }
   const row = patch(id, (r) => { r.state = 'running'; r.startedAt = Date.now(); r.error = '' })
+  if (!row) return { ok: false, reason: '任务不存在（被清理了？）' }
   const outDir = path.join(DIR(), id)
   fs.mkdirSync(outDir, { recursive: true })
   const deadline = Date.now() + (Number(row.minutes) || 12) * 60_000
