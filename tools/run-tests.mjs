@@ -1,7 +1,7 @@
 // run-tests —— 不依赖 npm 的测试跑轮（这台机器上 PATH 里没有 node/npm，
 // `npm test` 跑不了，而她自己改完代码必须验证）。
 //
-//   node tools/run-tests.mjs            # 顺序跑全部 42 套，全绿退出 0
+//   node tools/run-tests.mjs            # 顺序跑全部测试套，全绿退出 0
 //   node tools/run-tests.mjs memory     # 只跑文件名含 "memory" 的
 //
 // 与 package.json 的 `test` 脚本等价：同样的文件、同样的顺序、失败即停。
@@ -131,6 +131,7 @@ const TESTS = [
   'lock-tri-state-test.mjs',     // 2026-11-03：锁三态语义（O_EXCL/死锁抢占/故障降级）
   'llm-physio-test.mjs',         // 2026-11-03：B7 表达代谢（brief/直连双源、超支分支、永不抛）
   'llm-usage-test.mjs',          // 2026-11-04 补注册：直连记账（此前单跑过、全套从未跑它）
+  'workbench-test.mjs',          // 2026-11-09：工作台边界（路径穿越/软链逃逸/凭据/代码只读/命令白名单/超时）
 ]
 
 // ── 测试临时产物统一收尾（2026-11-02）─────────────────────────────────────

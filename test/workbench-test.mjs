@@ -20,11 +20,15 @@ import os from 'node:os'
 import path from 'node:path'
 
 // 先把家目录指到临时沙盒，再动态 import（paths.mjs 在 import 时求值 HOME）。
-const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'wb-'))
+// ⚠️ 不能直接用 os.tmpdir()：run-tests 会把 TMPDIR 指到 test/.tmp（项目目录内），
+// 那样 HOME 就落在 APP_ROOT 里面 —— sandbox 的"代码目录只读"会正确地拒绝每一次写，
+// 测试于是全红（2026-11-09 实测）。这里固定用系统 /tmp 的独立前缀。
+const BASE = fs.existsSync('/tmp') ? '/tmp' : os.tmpdir()
+const TMP = fs.mkdtempSync(path.join(BASE, 'wb-test-'))
 process.env.HOME = TMP
 delete process.env.USERPROFILE
 process.env.BOT_DATA_DIR = path.join(TMP, '.data')
-fs.mkdirSync(process.env.BOT_DATA_DIR, { recursive: true })
+fs.mkdirSync(path.join(process.env.BOT_DATA_DIR, 'notes'), { recursive: true })
 
 const sb = await import('../tools/lib/sandbox.mjs')
 const wb = await import('../tools/lib/workbench.mjs')

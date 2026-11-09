@@ -113,6 +113,10 @@ export async function work(id) {
     '② 工具失败就换办法，别假装成功。三次同一失败就停下来说清楚卡在哪。',
     '③ 最后一条回复不带工具调用，直接给结论：做了什么、结果在哪、有什么没做成。',
     '④ 结论要能被检验：数字从工具输出里来，不许估。',
+    // 2026-11-09：她的 CLI 里本来就有一堆"重手"（剪片/配音/生图/看自己代码/投稿），
+    // 聊天工具没暴露它们，但办公台可以跑 —— 否则"创作能力"这条还是够不着。
+    '⑤ 需要更强的手（剪片 produce、配音 sing、画表情包 sticker、看自己的代码 selfsrc、B站投稿）时，'
+      + `用 run_command 跑 \`${process.execPath} ${BOT()} <命令>\`，命令全集用 \`${process.execPath} ${BOT()} help\` 现查。`,
   ].join('\n')
 
   let msgs = [{ role: 'system', content: sys }, { role: 'user', content: row.goal }]
