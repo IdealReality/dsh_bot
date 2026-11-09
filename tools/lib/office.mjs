@@ -203,7 +203,7 @@ export async function work(id) {
       } catch { final = '' }
       if (!final) final = '（步数/时间用完了，没来得及收尾。已做的步骤见报告。）'
     }
-    const report = ['# ' + row.goal, '', '产出目录：`' + path.relative('/', outDir) + '`', '', final]
+    const report = ['# ' + row.goal, '', '产出目录：`' + outDir + '`', '', final]
       .concat(['', '## 执行记录', ...trace.map((t) => `- ${t.ok ? '✅' : '❌'} \`${t.name}\` ${JSON.stringify(t.args).slice(0, 160)}`)])
       .join('\n')
     try { fs.writeFileSync(path.join(outDir, 'report.md'), report, 'utf8') } catch { /* 报告写不成不影响结论 */ }

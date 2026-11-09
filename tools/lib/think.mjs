@@ -186,7 +186,12 @@ export async function speak(messages, thought, o = {}) {
       : ''))
   try {
     if (o.chatWithTools) {
-      const r = await o.chatWithTools(msgs, { temperature: o.temperature, purpose: o.purpose || 'chat' })
+      // 2026-11-09（十遍第 7 遍）：这里必须**不带工具**。
+      // speak 是"先想后说"的第二遍调用，主回复那一轮已经把工具跑完了；
+      // 再带一次 CHAT_TOOLS 等于给同一条消息开第二套 30 秒预算，
+      // 最坏能把 run_command / office_task 重复执行一遍（写文件写两次、立项两次）。
+      // 想说什么在这一步只需要措辞，不需要再动手。
+      const r = await o.chatWithTools(msgs, { temperature: o.temperature, purpose: o.purpose || 'chat', tools: false })
       return r?.text || ''
     }
     const llm = o.llm || await import('./llm.mjs')

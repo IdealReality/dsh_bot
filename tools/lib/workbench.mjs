@@ -141,7 +141,13 @@ export function writeText(a = {}) {
   try {
     fs.mkdirSync(path.dirname(r.path), { recursive: true })
     if (append) fs.appendFileSync(r.path, text, 'utf8')
-    else fs.writeFileSync(r.path, text, 'utf8')
+    else {
+      // 原子写（2026-11-09 十遍第 8 遍）：直接 writeFileSync 的语义是"先截断再写"，
+      // 进程在这一刻被杀就留下半个文件 —— 她的笔记/报告被截断比写失败更糟。
+      const tmp = r.path + '.tmp-' + process.pid
+      fs.writeFileSync(tmp, text, 'utf8')
+      fs.renameSync(tmp, r.path)
+    }
   } catch (e) {
     return { ok: false, result: '写失败：' + String(e?.message || e).slice(0, 120) }
   }
@@ -158,5 +164,11 @@ export async function execCommand(a = {}) {
   const t = Math.max(500, Math.min(10000, Number(a.timeoutMs) || 8000))
   const r = await runSandboxed(cmd, { timeoutMs: t, cwd: a.workdir || undefined })
   if (!r.ok && !r.out) return { ok: false, result: '没跑成：这条命令不在允许范围' }
-  return { ok: r.ok, result: (r.ok ? '' : '命令没成功（exit ' + (r.code ?? '?') + '）\n') + (r.out || '（没有输出）') }
+  // 实测（十遍第 6 遍）：她写 `cat > x.md <<'EOF'` 这种 shell 写法会失败，
+  // 然后把命令贴出来当答案。失败时把"这里没有 shell"说清楚，她才会改走 write_file。
+  const shellish = /[>|]|&&|\$\(|`/.test(cmd)
+  const hint = !r.ok && shellish
+    ? '\n（这里没有 shell：`> >> | && $( )` 都不会生效。写文件用 write_file，要管道就写成脚本用 node/python3 跑。）'
+    : ''
+  return { ok: r.ok, result: (r.ok ? '' : '命令没成功（exit ' + (r.code ?? '?') + '）\n') + (r.out || '（没有输出）') + hint }
 }

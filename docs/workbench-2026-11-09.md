@@ -94,3 +94,31 @@ office_task（只立项，<1s）──→   跑完 sendOwnerQQ 主动汇报
 - 单件工具 12 秒：网络搜索正常 3~9 秒，够；不够的活请走 `office_task`
 - `run_command` 不走 shell：`|`、`>`、`&&` 都只是普通字符，要管道就写进脚本再 `node x.mjs`
 - 办公台同时只跑一件（第二件会被告知"手上还压着一件"），避免她把自己机器跑满
+
+---
+
+## 7. 十遍全链复查（2026-11-09 当天，改动之后的第二轮）
+
+十遍各针对一个角度，**每一遍都是实测**，不是复述上一遍：
+
+| # | 角度 | 实测做法 | 发现 → 处理 |
+|---|---|---|---|
+| 1 | 契约一致性 | 工具 schema ↔ `runTool` 分支 ↔ CLI 注册 ↔ 文档全量 grep | `search-gate` 的"查过了"集合还停在 9 个工具 → 她调 `find_files`/`bili_article` 查到东西仍被判"该查没查"，白烧一次重写。扩到 9 个动作 + 提示语补工具名 |
+| 2 | 非法输入 | 14 个工具 × 32 组坏参数（空/null/类型错/超长/穿越），网络类缩到 8 组避免 412 | 0 问题（全部返回 `ok:false` + 非空文案，无一抛异常、无一超 12s） |
+| 3 | 沙盒红队 | 编码路径、目录软链、`cat` 凭据、`/proc/self/environ`、node 脚本读凭据、写 `/tmp`、查 docker.sock | **两套规矩**：`read_file` 拒读凭据，`cat .data/credentials.json` 读到 346 字节。修：命令参数级敏感拦截、`.credentials.yaml` 入名单、列目录过滤敏感名、`.git` 拒写 |
+| 4 | 预算/孤儿 | 给每个 `runCli` 的超时对账；跑真视频看子进程 | `debrief` 120s / `browse_page` 90s / `diary` 30s / `research` 20s 全超单件 12s → 外层杀的是 Promise，**子进程活到它自己的超时**。全部收到 ≤11s；无浏览器时 `browse_page` 直接短路 |
+| 5 | 并发/状态机 | 8 个独立进程同时 `office start`；造 3 小时前的僵尸 running；并发 stop | 裸 read-modify-write 会丢更新、僵尸 running 会永久挡住所有任务。修：`withLock` 串行化 + 超期回收 |
+| 6 | 真实模型采样 | 4 类请求 × 3 次，看工具选择与"没查却说查到" | 12 次全部选对（专栏→`bili_search(article)`、本地→`find_files`、办公→`run_command`/`office_task`、闲聊→不调）。暴露：`cat > x.md <<EOF` 这类 shell 写法失败后她会把命令贴出来当答案 → 失败文案补"这里没有 shell，用 write_file" |
+| 7 | 端到端装配 | prompt 体积、内省链是否重复执行工具 | `think.speak()` 带着完整 `CHAT_TOOLS` 又跑一遍 → 一条消息两套 30 秒预算，`run_command`/`office_task` 可能重复执行。改为 `tools:false`（说话不干活）。prompt 5638 字，新分工段 294 字（5.2%） |
+| 8 | 故障注入 | B 站连打 6 次、4 种坏 URL、000 权限文件、坏 API key 跑办公台、三进程并发写同一文件 | 全部优雅；坏 key → 任务落 `failed` 并写清"4 个通道失败 + HTTP 401"，不假成功不卡 running；并发写不撕裂（改原子写 tmp+rename） |
+| 9 | 数据可归因 | 真跑一个办公任务看结论/产出/状态 | 结论数字来自 `find`/`os.walk`（204 / 137），`report.md` 完整；顺手修了报告里"产出目录"少一个 `/` 的显示 |
+| 10 | 性能与回归 | 全套测试（可归因退出码）+ 全 HOME 找文件计时 + 6 个旧工具真调 | **117 套全绿、EXIT=0、177 秒**；`find_files` 100–124ms（3126 文件，大目录已跳过）；旧工具 6/6 正常 |
+
+十遍期间新增两条永久回归：
+
+- `test/office-state-test.mjs`（9 条）：跨进程并发只允许 1 个立项、状态文件不被写坏、僵尸回收、`stop` 语义
+- `test/workbench-test.mjs` 扩到 32 条（新增红队那 6 条：`.credentials.yaml`、`cat` 凭据、`/proc/self/environ`、裸词仍可 grep、`.git` 拒写）
+
+已知但**故意不改**的一条：群里被 @ 时她也能立项（工作台工具对群聊不设限）。
+理由是你这次要的是"提高自由度"；成本上限由"同时只跑一件 + 每次最多 12 分钟 + 容器边界"兜着。
+真要收紧，改法是在 `qq-server` 调 `chatWithTools` 时按 `isGroup` 传只读工具子集。
