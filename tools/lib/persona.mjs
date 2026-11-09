@@ -728,7 +728,10 @@ export function buildMessages({ platform = 'qq', userText, chatId, userId, turns
   // 对非本人私聊跳过 —— 否则陌生人能看到主人私聊里的原话
   // （实测：陌生人的 system 里出现「五千六百多，够吃很久」）。
   const ownerQQm = String(cfg.owner?.qq || '')
-  const ownerChatM = isGroup || !ownerQQm || String(userId) === ownerQQm
+  // 2026-11-09：群聊默认仍按 10-26 口径（群里也记得私聊，只要能分清人）。
+  // 把 cfg.privacy.groupPrivateRecall 设成 false 才切成"群里不注入私聊原话"。
+  const groupPrivate = isGroup && cfg.privacy?.groupPrivateRecall !== false
+  const ownerChatM = isGroup ? groupPrivate : (!ownerQQm || String(userId) === ownerQQm)
   const recalled = ownerChatM ? memory.recall(userText) : []
   const old = ownerChatM ? (recalled.length ? recalled : memory.randomOld()) : []
   if (old.length) parts.push('你隐约记得这些（可以自然提起，别逐字复述）：\n- ' + old.join('\n- '))
@@ -755,7 +758,9 @@ export function buildMessages({ platform = 'qq', userText, chatId, userId, turns
     // 那个函数按设计返回"除微信外全部通道"的记录（私聊原话、别人说的话全在），
     // 给网友看等于把主人的对话摊开。陌生人只保留本会话 recent（已在 messages 里）。
     const ownerChat = isGroup || !String(cfg.owner?.qq || '') || String(userId) === String(cfg.owner?.qq || '')
-    if (!all.lines.length) all = ownerChat ? memory.recallAll(chatId, { hours: 12, max: 12 }) : { lines: [], count: 0 }
+    if (!all.lines.length) all = ownerChat
+      ? memory.recallAll(chatId, { hours: 12, max: 12, audience: isGroup && !groupPrivate ? 'group' : 'private' })
+      : { lines: [], count: 0 }
     // 群聊里**照旧**注入（用户 10-26 拍板：不许让她"忘了私聊"，只要分得清人）。
     // 分得清靠的是 recallAll 的标签：私聊行是「[QQ] 用户：…」，群聊行是「[QQ群] 昵称：…」，
     // 她一眼能看出哪句是用户说的、哪句是群里谁说的。

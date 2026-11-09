@@ -380,6 +380,14 @@ function readRows(chatId, opts = {}) {
 /** 老数据里的推送行（还没有 kind 字段时写的）——开头就是这类标签的当广播看。 */
 const LEGACY_PUSH = /^【(?:B站|哔哩|抖音|微信|视频|分享|提醒|QQ)分享】/
 
+/**
+ * 一对一私聊通道（2026-11-09）。recallAll 被群聊调用时（audience='group'）要整段跳过：
+ * 里面是主人私聊的原话/她的回话，给群里任何人看都是越界。
+ * 默认口径仍是"群里也记得私聊"（cfg.privacy.groupPrivateRecall=true），
+ * 关掉开关才走这条过滤。
+ */
+const PRIVATE_CHAT_PLATFORMS = new Set(['qq', 'douyin', 'douyin-dm'])
+
 /** 最近 n 条对话（按 chatId 过滤，时间正序返回）。返回 {role, content} 格式，供 LLM 直接使用。
  *  ⚠️ 只放 user/assistant（10-25 修的 bug）：抖音那边会把"刷到某条视频"记成 role=event 的流水，
  *  混进 messages 里会被模型接口直接拒掉（HTTP 422 unknown variant `event`）——
@@ -505,12 +513,14 @@ export function lastByRole(chatId) {
  * @param {{hours?: number, max?: number, perRow?: number, now?: number}} opts
  */
 export function recallAll(chatId, opts = {}) {
-  const { hours = 12, max = 12, perRow = 90, now = Date.now() } = opts
+  const { hours = 12, max = 12, perRow = 90, now = Date.now(), audience = 'private' } = opts
   const cutoff = now - hours * 3600_000
   const rows = readRows('').filter(r =>
     r.chatId !== chatId
     && r.isGroup !== true                           // 群聊行不进"最近真实发生的事"：群里说话的是群友，不是用户
     && r.platform !== 'wechat'                       // 微信是替用户干活的工作记录，不进人格记忆
+    // 2026-11-09：群聊调用（audience='group'）时，一对一私聊的行整段不出场。
+    && (audience !== 'group' || !PRIVATE_CHAT_PLATFORMS.has(String(r.platform || '')))
     && (r.role === 'user' || r.role === 'assistant')
     && (r.role === 'assistant' || r.userId === String(config().owner?.qq || ''))  // multi-user isolation (10-31)
     // ⚠️ 10-27：她自己的**主动搭话**（kind:'push'）不算"真实发生的事"。

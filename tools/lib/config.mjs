@@ -102,6 +102,13 @@ export const DEFAULTS = {
     maxSteps: 20,        // 最多 20 步（一步 = 一次模型决策 + 至多若干工具调用）
     maxMinutes: 12,      // 最多 12 分钟
   },
+  // 隐私分级（2026-11-09）：跨会话记忆注入到**群聊**时的口径。
+  // 用户 10-26 明确要"群里也记得私聊、只要能分清人"，所以默认 true（保持现状）。
+  // 把它设成 false 后：群里只注入群聊行与她自己的公开活动（B站/上网），
+  // 一对一私聊的原话一个字都不进群聊 system —— 代价是她会"忘了私聊"。
+  privacy: {
+    groupPrivateRecall: true,
+  },
   // 打小报告（看完好视频 → QQ 汇报给用户）。bili-watch / share-queue / tattle 都会读。
   tattle: { enabled: true, dailyMax: 3, minScore: 15 },
   // 专题研究（2026-11-07 用户要求）：她按六轴去 B站看一类视频并递归深挖。

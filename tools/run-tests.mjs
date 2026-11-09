@@ -67,6 +67,7 @@ const TESTS = [
   'brain-store-test.mjs',     // store：锁/原子读改写/多进程无丢失
   'shard-test.mjs',            // 记忆分片：part2 能读回 / 不串台
   'memory-recall-test.mjs',
+  'privacy-audience-test.mjs', // 群聊隐私分级：默认记得私聊 / 关开关后不泄漏（2026-11-09）
   'bond-test.mjs',             // 关系器官：oxy/cort/习惯化/不应期/疤/衰减/第一人称呈现/慢相结算（2026-11-03）
   'roster-test.mjs',           // 人物名册：用户不入册/幂等建卡/称呼印象/满员淘汰（2026-11-03）
   'webpush-test.mjs',          // webui 主动说话：开关/次数闸/由头去重/TTL（2026-11-03）
