@@ -1,4 +1,23 @@
+- id: llm-pi-ai
+  config:
+    providers:
+      agentapi:
+        displayName: agentapi
+        api: openai-completions
+        baseURL: http://172.17.0.1:3066/v1
+        apiKeyEnv: DEEPSEEK_API_KEY
+        models:
+          - id: deepseek-v4.1-flash
+            name: DeepSeek V4.1 Flash
+            contextWindow: 1000000
+            compat:
+              thinkingFormat: zai
+
+- id: system-prompt
+  config:
+    includeHarnessIdentity: false
+
 - id: agent-default-model
   config:
-    provider: deepseek-official
+    provider: agentapi
     model: deepseek-v4.1-flash
