@@ -136,6 +136,12 @@ const cd = left ? A.snapshot(left.at + MIN) : null
 ok('退出后进入冷却（不立刻再躺下）', !!cd && cd.cooldownLeftMin > 0, cd ? `cooldown=${cd.cooldownLeftMin}min mode=${cd.mode}` : 'never left')
 const stillCooling = left ? idleRun(left.at, 6, 2) : { last: { mode: 'doze', why: 'never left' } }
 ok('冷却期内不再进假睡', stillCooling.last.mode === 'awake', `mode=${stillCooling.last.mode} why=${stillCooling.last.why}`)
+// 2026-11-10：假睡到点退出必须带醒来阶跃（burst），否则 25 分钟冷却一过立刻又躺下。
+// 注意 level 是每拍由 levelOf() 重算的**派生量**，不是状态 —— 所以断言要落在 burst 上，
+// 而不是断言 level 被抬高（wakeInPlace 抬的那一下就只活当拍）。
+ok('到点退出后有清醒窗（≥44 分钟）', !!cd && Number(cd.burstLeftMin || 0) >= 44, cd ? `burstLeft=${cd.burstLeftMin}min` : 'never left')
+const inBurst = left ? idleRun(left.at, 40, 2) : { all: [{ mode: 'doze' }] }
+ok('清醒窗内（40 分钟）不会再进假睡', inBurst.all.every((r) => r.mode !== 'doze'), `modes=${[...new Set(inBurst.all.map((r) => r.mode))].join(',')}`)
 
 /* ── ⑦ 欠觉到该真睡时，假睡不许抢 ─────────────────────────────────── */
 console.log('\n⑦ 该真睡时不许假睡')

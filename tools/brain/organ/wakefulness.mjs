@@ -296,11 +296,30 @@ export function tick(now = Date.now(), o = {}) {
         const why = high ? '清醒度回到阈值之上'
           : timeout ? '假睡到点（' + Math.round(dm) + ' 分钟），该撑一段了'
             : '被叫醒'
-        st.mode = 'awake'
-        st.since = t
-        st.cooldownUntil = timeout ? t + RULES.dozeCooldownMin * MIN : Number(st.cooldownUntil || 0)
-        st.doze = { ...empty().doze }
-        pushHistory(st, 'doze', 'awake', why, t)
+        // 2026-11-10 修：假睡到点退出时**漏了醒来阶跃**（wakeInPlace）。
+        //
+        // 原来这里是手写 st.mode='awake'，没有抬高 level、也没有设 burstUntil ——
+        // 于是"刚睡醒"的她 level 还是 0.23~0.26（低于 dozeAt 0.30），
+        // 全靠 dozeCooldownMin=25 分钟挡着；冷却一过立刻又进假睡。
+        //
+        // 实测（11-10 全天 wakefulness.json 的 history）就是这个循环：
+        //   08:18 假睡到点 → 08:43 闲下来了 → 10:13 到点 → 10:38 闲下来了 → …
+        // 每轮清醒 25 分钟、假睡 90 分钟，21 条记录全在循环里。
+        // 后果不是"少玩"，是她**一次 browse/watch 都轮不上**：
+        // 25 分钟里先要回话，剩下的时间不足以走完一个「想做→执行」；
+        // 而 self.decide 在 dozing 时直接判 rest（半睡着，没心思做什么）。
+        //
+        // 与"从真睡回来"保持一致（那条路一直是对的）：
+        // 睡够了就该撑一段，而不是睁眼就已经困。
+        if (timeout) {
+          wakeInPlace(st, t, why, { burst: true })
+          st.cooldownUntil = t + RULES.dozeCooldownMin * MIN
+        } else {
+          st.mode = 'awake'
+          st.since = t
+          st.doze = { ...empty().doze }
+          pushHistory(st, 'doze', 'awake', why, t)
+        }
         out.leftDoze = true
         out.why = why
       }
