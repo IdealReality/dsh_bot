@@ -79,18 +79,23 @@ function spawnDetached(args, logName, env = {}) {
 }
 
 /** B站 自己作品评论巡检：到点就跑一次 replies --own-only --go（额度/自刹车由它自己管）。 */
-const lastOwnScan = { at: 0, running: false, tries: [], lastStart: 0 }
+// sig/same/nextAt：同样结论的连续次数与"下次最早什么时候再跑"（2026-11-11）
+const lastOwnScan = { at: 0, running: false, tries: [], lastStart: 0, sig: '', same: 0, nextAt: 0 }
 export async function ensureBiliOwnReply({ everyMin = 0 } = {}) {
   const cfg = config()
   const rp = cfg.bilibili?.replies ?? {}
   if (!cfg.bilibili || cfg.bilibili.enabled === false) return { skipped: 'bilibili 关着' }
   if (rp.enabled !== true || rp.ownWorks === false) return { skipped: 'bilibili.replies 关着' }
   const every = Number(everyMin || rp.autoMin || 12) * 60_000
-  if (!everyMin && Date.now() - lastOwnScan.at < every) return { skipped: '还没到点' }
+  const nowMs = Date.now()
+  if (!everyMin && nowMs - lastOwnScan.at < every) return { skipped: '还没到点' }
+  // 2026-11-11：连续几轮结论一模一样就指数退避（12min → 1h → 4h → 16h → 24h 封顶）。
+  // 病根：B站 号被审核时每 12 分钟跑一轮，结论永远是「最近 3 条评论里 3 条仅自己可见」，
+  // 实测连刷两周、上千次 API 调用。结论一变（有新评论/审核结束）立刻复位。
+  if (!everyMin && nowMs < lastOwnScan.nextAt) return { skipped: '结论没变，退避中', until: lastOwnScan.nextAt }
   if (lastOwnScan.running) return { skipped: '上一轮还在跑' }
 
   // 退避（10-31 补）：10 分钟内连续起 3 次都没成 → 拉长间隔，别 crash-loop 刷进程。
-  const nowMs = Date.now()
   lastOwnScan.tries = (lastOwnScan.tries || []).filter((t) => nowMs - t < 10 * 60_000)
   if (lastOwnScan.tries.length >= 3 && nowMs - Number(lastOwnScan.lastStart || 0) < 10 * 60_000) {
     return { skipped: '退避中', backedOff: true, tries: lastOwnScan.tries.length }
@@ -102,15 +107,26 @@ export async function ensureBiliOwnReply({ everyMin = 0 } = {}) {
     const out = await new Promise((resolve) => {
       const child = spawn(process.execPath, [BOT_MJS, 'replies', '--own-only', '--go', '--max', '2'], { windowsHide: true })
       let buf = ''
+      let settled = false
+      const done = (v) => { if (settled) return; settled = true; clearTimeout(timer); resolve(v) }
+      // 2026-11-11：原来没有超时 —— B站 一慢，这一轮永远 running，
+      // 之后每一拍都返回"上一轮还在跑"，巡检等于静默死掉。
+      const timer = setTimeout(() => { try { child.kill('SIGKILL') } catch { /* ignore */ } done(buf + '\n[巡检超时 120s，已终止]') }, 120_000)
       child.stdout.on('data', (d) => { buf += d.toString() })
       child.stderr.on('data', (d) => { buf += d.toString() })
-      child.on('exit', () => resolve(buf))
-      child.on('error', (e) => resolve(buf + '\n' + e.message))
+      child.on('exit', () => done(buf))
+      child.on('error', (e) => done(buf + '\n' + e.message))
     })
     lastOwnScan.at = Date.now()
     const interesting = out.split('\n').filter((l) => /已回复|回评失败|新评论|⛔|⚠|自己作品/.test(l)).slice(0, 6).join(' | ')
+    // 结论签名 → 连续相同次数 → 退避（只在自动节拍里生效，显式 everyMin 不受影响）
+    const sig = interesting.slice(0, 80)
+    if (sig && sig === lastOwnScan.sig) lastOwnScan.same = (lastOwnScan.same || 0) + 1
+    else { lastOwnScan.same = 0; lastOwnScan.sig = sig }
+    const backoffMin = lastOwnScan.same >= 2 ? Math.min(24 * 60, 60 * Math.pow(4, Math.min(lastOwnScan.same - 2, 3))) : 0
+    lastOwnScan.nextAt = backoffMin ? Date.now() + backoffMin * 60_000 : 0
     if (interesting) sayDedup(`B站 自己作品巡检：${interesting}`)
-    return { ran: true, out: interesting }
+    return { ran: true, out: interesting, backoffMin }
   } finally {
     lastOwnScan.running = false
   }
