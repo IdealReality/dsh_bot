@@ -50,6 +50,7 @@ const TESTS = [
   'persona-neutral-test.mjs', // 人格中性化：坏人格兜底/账本注入/族群块权限/两处锚同源（2026-11-07）
   'identity-bio-test.mjs',    // 身份核验六层：化学/生物/心理/神经/主观/哲学（2026-11-10）
   'identity-stress-test.mjs', // 身份核验高压：并发丢更新/坏数据/时钟回拨/极端参数/单层全挂（2026-11-10）
+  'remember-fact-shape-test.mjs', // remember_fact 形状：对象输入不变 [object Object]、userId 用真主号（2026-11-11）
   'dsh-bridge-test.mjs',      // 能力桥：bot_* 工具形状与执行/命令白名单来自 bot.mjs/会话事件只收真人输入（2026-11-04）
   'session-cwd-test.mjs',     // 会话 cwd 自愈：旧工作目录不存在时必须换会话 id（否则每轮静默跑死）（2026-11-04）
   'lock-adversarial-test.mjs', // 锁对抗：release 认领/抢占原子性/多行 pid 解析/老格式兼容（2026-11-04）

@@ -354,12 +354,30 @@ export async function runTool(name, args = {}) {
       }
 
       case 'remember_fact': {
-        const text = String(a.text || '').trim()
+        // 2026-11-11 修两个真 bug（数据体检发现的）：
+        //
+        // ① `a.text` 可能不是字符串。模型偶尔把对象塞进来（{key, value} / {content}），
+        //    旧代码 `String(a.text)` → `[object Object]`，原样写进记忆：
+        //    实测 ep 里真有一条 gist = 「用户：（关于用户：[object Object]）」。
+        //    这种记忆不但没用，还会被 recall 召回。这里先尝试从对象里取有意义的字段，
+        //    取不到再 JSON.stringify（至少留下原始结构，能人工救）。
+        //
+        // ② userId 写字面量 'owner'。结果 ep 里 who.others[0].id === "owner"，
+        //    认人链路（ownerLine / diagnose 的认人检查）看到一串不是号的字符串。
+        //    改成读配置里的真主号；读不到才退回 'owner'。
+        const rawText = a.text
+        const text = (
+          typeof rawText === 'string' ? rawText
+            : rawText && typeof rawText === 'object'
+              ? String(rawText.text || rawText.content || rawText.value || rawText.fact || JSON.stringify(rawText))
+              : String(rawText ?? '')
+        ).trim()
         if (!text) return { ok: false, result: '没写内容，记不了。' }
         // 走 owner-facts，让她下次真的"记得"
         const oaf = await import('./owner-facts.mjs')
         const got = oaf.learnFromOwner ? oaf.learnFromOwner(text) : []
-        memory.remember('qq', 'qq:owner-notes', 'owner', 'system', `（关于用户：${text}）`, { allowSelfTest: true })
+        const ownerQQ = (() => { try { return String(config().owner?.qq || '') || 'owner' } catch { return 'owner' } })()
+        memory.remember('qq', 'qq:owner-notes', ownerQQ, 'system', `（关于用户：${text}）`, { allowSelfTest: true })
         return { ok: true, result: `记住了：${text}` + (got?.length ? `（${got.map((g) => g.key).join('/')}）` : '') }
       }
 
