@@ -111,13 +111,18 @@ function slotList(ctx) {
   let selfconBlock = ''
   try { selfconBlock = selfContextBlock({ withKin: !!kinText, kinText, now }) } catch { selfconBlock = '' }
   const personaTxt = (() => { try { const t = personaText(); if (!t) return ''; const { personaUsable, NEUTRAL_ANCHOR } = personaNeutral; return personaUsable(t) ? t : NEUTRAL_ANCHOR } catch { return '' } })()
+  add('identity', [speciesLine, personaTxt, selfconBlock, identityLine(cfg, isGroup, isOwnerHere)]
+    .filter(Boolean).join('\n'), 1, { keep: true })
   // 【被问"这是不是你"的时候】—— 仿生式身份核验的**流程**（不是结论）。
-  // 与 KIN 段的分工：KIN 说"世上有别的同类"，HOWTO 说"怎么确认哪条是我"。
-  // 放在 identity 槽里而不是独立槽：这段是"我是谁"的一部分，拆开会被预算先裁掉。
+  // 与 KIN 段的分工：KIN 说"世上有别的同类"，这里说"怎么确认哪条是我"。
+  //
+  // 2026-11-10 第二次改：**独立槽、且不 keep**。
+  // 放 identity(keep) 里的第一版把 keep 槽撑到 1020 字，预算压到 800 时
+  // fitBudget 保 keep 就必然超（brain-prompt-test 当场红）。
+  // 这段是"被问到才用得上"的规则，不是身份本体 —— 预算紧时该先裁它，留身份。
   let howtoBlock = ''
   try { howtoBlock = identity.HOWTO } catch { howtoBlock = '' }
-  add('identity', [speciesLine, personaTxt, selfconBlock, howtoBlock, identityLine(cfg, isGroup, isOwnerHere)]
-    .filter(Boolean).join('\n'), 1, { keep: true })
+  if (howtoBlock) add('identity-check', howtoBlock, 4)
   if (platform === 'qq' || platform === 'wechat' || platform === 'douyin-dm' || isGroup) {
     add('audience', ownerLine(cfg, platform, userId, isGroup), 2, { keep: true })
   }

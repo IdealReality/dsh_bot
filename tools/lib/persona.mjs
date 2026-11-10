@@ -13,7 +13,10 @@ import * as brainInner from '../brain/inner.mjs'
 import * as selfcon from '../brain/organ/selfcon.mjs'
 import { NEUTRAL_ANCHOR, personaUsable, INJECTION_GUARD, CURIOSITY_RULE } from './persona-neutral.mjs'
 import { briefState, briefUsable, PRESENT_NOTE } from './state-brief.mjs'
-import { selfContextBlock, kinText } from './self-context.mjs'
+import { selfContextBlock, kinText, HOWTO } from './self-context.mjs'
+// 2026-11-10：身份核验（回想 + 核对）。lib → brain 的依赖与 self-context 同一条线，
+// 不新增环：identity.mjs 只 import recall/self-context，不回头 import persona。
+import * as identityCheck from '../brain/identity.mjs'
 import { lastUnansweredPush } from './memory.mjs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -428,6 +431,30 @@ export function buildMessages({ platform = 'qq', userText, chatId, userId, turns
     ? { ...cfg, identity: { ...cfg.identity, name: '', selfClaim: '' } }
     : cfg, isGroup, isOwnerChat)
   if (idLine) parts.push(idLine)
+
+  // 【被问"这是不是你"的时候】（2026-11-10）：与 brain/assemble 的 identity-check 槽
+  // 是**同一份文案**（lib/self-context.HOWTO）。为什么两条路线都要放：
+  // 这个仓库漂过三次，最近一次就是 anchor/【此刻】只有旧路线有 ——
+  // 切 brain.mode 就换一个"她"。核验流程属于人格的一部分，不能只在 live 生效。
+  parts.push(HOWTO)
+
+  // 【真去查一次】（2026-11-10）
+  //
+  // 上面那段 HOWTO 只给了**步骤**。步骤要能落地，得有人把数据端上来 ——
+  // 否则她还是只能照着流程"演一遍查"，实际什么都没查。
+  // 所以：这句话像不像"在确认是不是我" → 像就跑一次 identity.verify()，
+  // 把回想结果（哪次、什么话）和核对结果（号/形象/会话）摊进 system。
+  //
+  // 为什么不是每轮都查：verify 要走记忆检索（扫 episodes），主链路每轮都跑会吃满延迟。
+  // 人也一样 —— 没人一边吃饭一边反复核对身份证。
+  if (platform === 'qq' || platform === 'wechat' || platform === 'douyin-dm' || isGroup) {
+    try {
+      if (identityCheck.looksLikeIdentityQuestion(userText)) {
+        const v = identityCheck.verify(userText, { platform, chatId, userId, isGroup, isOwner: isOwnerChat })
+        if (v && v.line) parts.push('【有人问到是不是你 —— 这是你刚查到的】\n' + v.line)
+      }
+    } catch (e) { swallow(e, 'persona:identity-verify') }
+  }
 
   // ── 此刻的倾向（2026-11-02）────────────────────────────────────────
   //
