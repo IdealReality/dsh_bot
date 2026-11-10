@@ -203,6 +203,23 @@ const restRes = await SELF.decide({ now: nowSelf + 2 * MIN, dozing: true })
 ok('假睡：旧计划不被续期，直接回到 rest', restRes.action === 'rest' && restRes.kept === false, JSON.stringify({ action: restRes.action, kept: restRes.kept, why: restRes.why }))
 ok('假睡的 why 说得出"半睡着"', /半睡/.test(String(restRes.why)), String(restRes.why))
 
+/* ── ⑫ 醒来后不继承假睡里的计划（2026-11-10 第二层修复）──────────── */
+//
+// 病象：假睡里每拍都写一次 rest（span≈68min），醒来后 prev.until 还在未来
+// → decide 直接 kept，候选表根本没算过。实测清醒窗从 25 分钟修到 45 分钟了，
+// 她一次都没"想"过要做什么（11-10 22:14 醒 → 22:59 又睡；00:29 醒 → 01:14 又睡）。
+console.log('\n⑫ 醒来后不继承假睡里的计划')
+fs.writeFileSync(selfFile, JSON.stringify({ at: nowSelf, current: null, history: [], decisions: 1 }))
+const dz = await SELF.decide({ now: nowSelf + 3 * MIN, dozing: true })
+ok('假睡里的决定带 dozed 标记', dz.dozed === true, JSON.stringify({ action: dz.action, dozed: dz.dozed }))
+const wokeUp = await SELF.decide({ now: nowSelf + 3 * MIN + 30_000, dozing: false })
+ok('醒来后不继承（kept=false，重新算候选）', wokeUp.kept === false, JSON.stringify({ action: wokeUp.action, kept: wokeUp.kept, why: wokeUp.why }))
+ok('醒来后的决定不再带 dozed 标记', wokeUp.dozed !== true, JSON.stringify({ dozed: wokeUp.dozed }))
+// 反向：清醒时写的计划必须照常续期（不然她会每 30 秒换一件事）
+const awakePlan = await SELF.decide({ now: nowSelf + 4 * MIN, dozing: false })
+const keptAgain = await SELF.decide({ now: nowSelf + 4 * MIN + 30_000, dozing: false })
+ok('清醒时写的计划照常续期（没被误伤）', keptAgain.kept === true, JSON.stringify({ action: keptAgain.action, kept: keptAgain.kept }))
+
 /* ── ⑪ 自维护节流：假睡不是加班 ──────────────────────────────────── */
 // 2026-11-08 验收整改：节流时间戳由**编排层**在 spawn 成功后 markTidy 推进，
 // 所以这里必须模拟编排层（tick 只请求，markTidy 才记账）。

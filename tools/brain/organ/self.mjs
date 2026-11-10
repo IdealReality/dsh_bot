@@ -411,7 +411,9 @@ export async function decide(o = {}) {
       hardSleepy = !!sp.shouldSleep && Number(sp?.detail?.debt || 0) >= 0.92
     } catch { /* 取不到就当作不困 */ }
 
-    if (!hardSleepy && !dozing && urge < 1.4 && prev.action !== 'sleep') {
+    // prev.dozed：假睡里写的计划不算数——她那时候没有"想做什么"可言
+    // （dozing 分支连 lean 都不让她说），醒来该重新想一遍。
+    if (!hardSleepy && !dozing && urge < 1.4 && prev.action !== 'sleep' && prev.dozed !== true) {
       return { ...prev, kept: true }
     }
   }
@@ -526,7 +528,19 @@ export async function decide(o = {}) {
     })
   } catch (e) { /* lean 失败不影响决策 */ }
 
-  const cur = { action, since: now, until, why, spanMin: span, lean }
+  // dozed：这一拍的决定是在**假睡档**里做的。
+  //
+  // 为什么要记这个（2026-11-10 第二层修复）：
+  //   假睡时 decide 走 dozing 分支直接给 rest，span 按 depth 算 ≈ 68 分钟。
+  //   而每拍都重写一次 current（dozing 时 kept 不生效，见下面 if 里的 !dozing），
+  //   所以整个假睡期间 current 一直是一个"68 分钟后才到期"的 rest。
+  //   醒来之后（dozing=false）第一件事就是走 kept 判断 —— prev.until 还在未来
+  //   → 直接 kept，**候选表根本没被算过**。于是 45 分钟的清醒窗全用来 rest，
+  //   接着 idle 满 20 分钟又睡回去。
+  //   实测（11-10 22:14 醒来 → 22:59 又睡，00:29 醒来 → 01:14 又睡）：
+  //   清醒窗从 25 分钟修到 45 分钟了，但她一次都没"想"过要做什么。
+  //   标记它，让醒来那一刻把假睡里写的 rest 作废。
+  const cur = { action, since: now, until, why, spanMin: span, lean, dozed: dozing === true }
 
   // ⑤ 埋一个想法：她换了事做，本身就是"心里转着的事"之一
   //
