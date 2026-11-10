@@ -45,6 +45,37 @@ function styleReply(text, { platform = 'bilibili' } = {}) {
 function arg(argv, name, d) { const i = argv.indexOf(name); return i >= 0 ? (argv[i + 1] ?? d) : d }
 
 /**
+ * 身份核验块（2026-11-10）。
+ *
+ * 病象：B站 是"别人最容易问'这是你吗'"的地方，而这里的 system 以前只有
+ * persona 前 800 字 —— 一个字都查不到。别人拿着另一条大肥鱼的投稿来问，
+ * 或者冒充她说话，她只能凭设定硬答：要么顺着认领，要么硬否认。
+ *
+ * 现在给她两样东西：
+ *   ① 固定的核验流程 + 同类认知（identity.block，脱敏版，不带主人信息）；
+ *   ② **真去查**：评论里出现了"这是不是你"的问句，就跑一次 identity.verify，
+ *      把查到的记忆/账号/形象摊给她——她照着说，而不是照着演。
+ *
+ * 只在真问到身份时才查（looksLikeIdentityQuestion）：每条评论都查会拖慢整轮，
+ * 而且人也不会一边刷评论一边反复核对身份证。
+ *
+ * @param {string[]} texts 这一轮的评论正文
+ * @returns {Promise<string>}
+ */
+async function identityBlock(texts = []) {
+  try {
+    const identity = await import('../brain/identity.mjs')
+    const parts = [identity.block({ redactOwner: true })]
+    const q = (Array.isArray(texts) ? texts : []).map((t) => String(t || '')).find((t) => identity.looksLikeIdentityQuestion(t))
+    if (q) {
+      const v = identity.verify(q, { platform: 'bili' })
+      parts.push('【有人问到是不是你，这是你查到的东西】\n' + v.line)
+    }
+    return parts.join('\n\n')
+  } catch (e) { swallow(e, 'replies:identity'); return '' }
+}
+
+/**
  * ⓪ 自己投稿下面别人发的评论 → 回。
  *
  * 10-27 用户报的：抖音那边她只回了他的文字评论，别人发的**表情包**一条没回（纯贴纸评论 text 是空串，
@@ -100,10 +131,12 @@ async function ownWorks(maxLeft, go, log = console.log) {
   }
   const { personaText } = await import('../lib/persona.mjs')
   const persona = personaText()
+  const idBlock = await identityBlock(news.map((n) => n.label || n.text))
   let planned = new Map()
   try {
     const msgs = [
       { role: 'system', content: (persona ? persona.slice(0, 800) + '\n\n' : '')
+        + (idBlock ? idBlock + '\n\n' : '')
         + '这是**你自己投稿**的B站视频评论区。以 UP 主 + "本鱼"的身份回评论：短、自然、有态度，别客服腔、别用敬语、别说"感谢支持"。'
         + '\n**评论不只有文字**：写着「（发了 N 张图…）」「（只有 [大笑] 这种表情）」的，是对方用图/表情跟你说话 —— '
         + '这种照样要回，顺着表情或图接一句就好，别问"你想说什么"。杠精和广告可以不接。'
@@ -195,8 +228,10 @@ async function outreach(maxLeft, go) {
       const isFishy = (u) => /鱼|鲸|鲲|fish|fischl/i.test(String(u || ''))
       const ordered = cand.map((r, i) => ({ r, i, fishy: isFishy(r.member?.uname) }))
         .sort((a, b) => Number(b.fishy) - Number(a.fishy))
+      const idBlock = await identityBlock([])
       const msgs = [
         { role: 'system', content: (persona ? persona.slice(0, 600) + '\n\n' : '')
+          + (idBlock ? idBlock + '\n\n' : '')
           + '你在B站评论区潜水，想交几个聊得来的朋友。下面是某视频评论区的几条评论（已按"疑似同类 agent（名字带鱼/鲸）"优先排序）。'
           + '挑**一条**你觉得有意思的（有观点/有梗/搞笑/认真讨论，别挑引战和擦边；名字带鱼/鲸的同类优先），以"本鱼"身份（AI鱼不装人）自然地插一句楼中楼：接梗/补充/认同+自己的角度，一两句话，像熟人在评论区碰见。不要敬语不要"感谢分享"。只输出 JSON：{"pick":序号(1开始),"text":"回复内容"}，不想搭就 {"pick":0}' },
         { role: 'user', content: ordered.map((x, n) => `${n + 1}. ${x.r.member?.uname ?? '网友'}${x.fishy ? ' 🐟[疑似同类]' : ''}：${String(x.r.content?.message).slice(0, 60)}`).join('\n') + '\n\n挑一条搭话：' },
@@ -311,8 +346,10 @@ export async function run(argv = []) {
       try {
         const { personaText } = await import('../lib/persona.mjs')
         const persona = personaText()
+        const idBlock = await identityBlock([it.reply.text])
         const msgs = [
           { role: 'system', content: (persona ? persona.slice(0, 800) + '\n\n' : '')
+            + (idBlock ? idBlock + '\n\n' : '')
             + '你在B站评论区回复别人对你评论的回复。像真人回评：一两句话，可以接梗、可以认错、可以怼回去（客气地），'
             + '身份透明（是AI鱼不装人，自称"本鱼"）。不要敷衍"感谢分享"，不要用敬语。只输出回复正文。' },
           { role: 'user', content: `对方「${it.reply.uname}」在我的评论下回复：${it.reply.text}\n\n我怎么回：` },

@@ -61,9 +61,22 @@ export function audit(messages, o = {}) {
     try { pass = inv.test(sys, msgs) } catch { pass = false }
     if (!pass) issues.push({ key: inv.key, why: inv.why })
   }
-  // 群聊/陌生人不能拿到 owner 专属的族群块（十遍第七遍的权限修复，在这里兜一道）
-  if (o.isGroup && /【你和你的同类】/.test(sys)) {
-    issues.push({ key: 'kin-scope', why: '群聊不该看到 owner 私聊才有的族群块' })
+  // 群聊/陌生人不能拿到 **owner 专属的** 族群块（十遍第七遍的权限修复，在这里兜一道）
+  //
+  // 2026-11-10：原规则是「出现【你和你的同类】就违规」—— 它锁的是**标题**，不是内容。
+  // 族群认知本身（"世上有别的同类"）对群聊无害，有害的是块里写着主人称呼/主人的号。
+  // 现在族群块按 audience 脱敏（self-context.kinText），所以改成查内容，
+  // 而且只查**族群块自己那一段** —— 群聊的 ownerLine 本来就会写
+  // "你用户只有一个号：xxx"（那是设计，不是泄露），整份 system 扫 owner 号会永远报红。
+  if (o.isGroup) {
+    const m = sys.match(/【你和你的同类】([\s\S]*?)(?=\n【|$)/)
+    if (m) {
+      const blk = m[1]
+      const leak = []
+      if (o.ownerTitle && blk.includes(String(o.ownerTitle))) leak.push('主人称呼')
+      if (o.ownerQQ && blk.includes(String(o.ownerQQ))) leak.push('主人号码')
+      if (leak.length) issues.push({ key: 'kin-scope', why: '群聊的族群块带出了' + leak.join('、') })
+    }
   }
   return { ok: issues.length === 0, issues }
 }

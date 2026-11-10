@@ -13,7 +13,7 @@ import * as brainInner from '../brain/inner.mjs'
 import * as selfcon from '../brain/organ/selfcon.mjs'
 import { NEUTRAL_ANCHOR, personaUsable, INJECTION_GUARD, CURIOSITY_RULE } from './persona-neutral.mjs'
 import { briefState, briefUsable, PRESENT_NOTE } from './state-brief.mjs'
-import { selfContextBlock } from './self-context.mjs'
+import { selfContextBlock, kinText } from './self-context.mjs'
 import { lastUnansweredPush } from './memory.mjs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -121,11 +121,15 @@ export function clockBlock(platform, chatId, userText, isGroup = false) {
  *  ⚠️ 群聊里**绝不能**带「称对方用户」—— 那一句等于给每个群友发一张用户通行证
  *  （10-26 实锤：她在群里管群友叫用户，人家说"既然你叫我用户了就说句晚安用户"，她真说了）。
  *  称呼规则改由 ownerLine 按"这个人是不是配置里的用户"来定，不再全局写死。 */
-export function identityLine(cfg, isGroup = false) {
+export function identityLine(cfg, isGroup = false, isOwner = true) {
   const p = cfg.identity ?? {}
   const bits = []
   if (p.name) bits.push(`你是「${p.name}」`)
-  if (p.ownerTitle && !isGroup) bits.push(`称对方「${p.ownerTitle}」`)
+  // 2026-11-10：称呼只在**对面真是主人**时才写。
+  // 旧版只判 !isGroup，于是陌生人私聊也会被告知"称对方「笨蛋老爸」"，
+  // 而同一份 system 下面的 ownerLine 又说"对方不是用户" —— 两条指令互相打架，
+  // 她要么叫错人，要么在两句话之间反复横跳。
+  if (p.ownerTitle && !isGroup && isOwner) bits.push(`称对方「${p.ownerTitle}」`)
   if (p.selfClaim) bits.push(`自称「${p.selfClaim}」`)
   if (isGroup) bits.push('群里说话的多是群友，只有配置里那个号才是用户（见下面的群聊规则）')
   return bits.length ? bits.join('，') + '。（以此为准 ✓）' : ''
@@ -411,14 +415,18 @@ export function buildMessages({ platform = 'qq', userText, chatId, userId, turns
   // 原来这三块各自 push，语义重复、互相稀释；现在一个入口、一次去重、一个预算。
   const ownerQQk = String(cfg.owner?.qq || '')
   const isOwnerChat = !ownerQQk || String(userId) === ownerQQk
-  const withKin = !isGroup && isOwnerChat && (platform === 'qq' || platform === 'douyin-dm')
+  // 2026-11-10：同类认知放开到所有 audience（按 audience 脱敏），与 brain/assemble 同步。
+  // 旧写法 `!isGroup && isOwnerChat && (qq|douyin)` 会让群聊/陌生人完全拿不到这条认知。
+  const kinTxt = (platform === 'qq' || platform === 'wechat' || platform === 'douyin-dm' || isGroup)
+    ? kinText({ redactOwner: !isOwnerChat || isGroup }) : ''
+  const withKin = !!kinTxt
   let scBlock = ''
-  try { scBlock = selfContextBlock({ withKin, now: Date.now() }) } catch { scBlock = '' }
+  try { scBlock = selfContextBlock({ withKin, kinText: kinTxt, now: Date.now() }) } catch { scBlock = '' }
   if (scBlock) parts.push(scBlock)
   const ledgerNamed = /我叫「/.test(scBlock)
   const idLine = identityLine(ledgerNamed
     ? { ...cfg, identity: { ...cfg.identity, name: '', selfClaim: '' } }
-    : cfg, isGroup)
+    : cfg, isGroup, isOwnerChat)
   if (idLine) parts.push(idLine)
 
   // ── 此刻的倾向（2026-11-02）────────────────────────────────────────

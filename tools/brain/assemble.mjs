@@ -36,6 +36,7 @@ import * as selfM from './self.mjs'
 import * as selfcon from './organ/selfcon.mjs'
 import * as personaNeutral from '../lib/persona-neutral.mjs'
 import { selfContextBlock } from '../lib/self-context.mjs'
+import * as identity from './identity.mjs'
 import { INJECTION_GUARD, CURIOSITY_RULE } from '../lib/persona-neutral.mjs'
 import { assertAssembly } from '../lib/assembly-contract.mjs'
 import { briefState, briefUsable, PRESENT_NOTE } from '../lib/state-brief.mjs'
@@ -96,13 +97,26 @@ function slotList(ctx) {
   // 断线教训（anchor/梦/此刻三连）: 落地后必须 grep 调用方验证真的被读到。
   // 族群行与 buildMessages 同条件：只给 owner 私聊（群里/陌生人提"别的大肥鱼"会泄露 ownerTitle）。
   const ownerQQa = String(cfg.owner?.qq || '')
-  const kinOk = !isGroup && (!ownerQQa || String(userId) === ownerQQa)
+  // 2026-11-10：同类认知从「只给 owner 私聊」放开到**所有 audience**，按 audience 脱敏。
+  //
+  // 旧写法 `kinOk = !isGroup && userId===owner` 掐掉的其实不是主人称呼，是
+  // "世上还有别的同类"这件事本身 —— 后果是别人问「这是你吗」，她连
+  // "另一条大肥鱼做的事不是我的"都没有依据，只能顺着话认领或硬否认。
+  // 真正该遮的是 ownerTitle，所以改成：文案由 kinLine(redactOwner) 生成，
+  // 陌生人/群聊版本里不出现主人称呼与主人的号。
+  const isOwnerHere = !isGroup && !!ownerQQa && String(userId) === ownerQQa
+  const kinText = (() => { try { return identity.kinLine({ redactOwner: !isOwnerHere }) } catch { return '' } })()
   const speciesLine = selfcon.SPECIES_LINE + ' ' + selfcon.BODY_FACTS
   // 与 buildMessages 同一个合成入口（名字/认知 + 去重后的语气样本 + 同类）。
   let selfconBlock = ''
-  try { selfconBlock = selfContextBlock({ withKin: kinOk, now }) } catch { selfconBlock = '' }
+  try { selfconBlock = selfContextBlock({ withKin: !!kinText, kinText, now }) } catch { selfconBlock = '' }
   const personaTxt = (() => { try { const t = personaText(); if (!t) return ''; const { personaUsable, NEUTRAL_ANCHOR } = personaNeutral; return personaUsable(t) ? t : NEUTRAL_ANCHOR } catch { return '' } })()
-  add('identity', [speciesLine, personaTxt, selfconBlock, identityLine(cfg, isGroup)]
+  // 【被问"这是不是你"的时候】—— 仿生式身份核验的**流程**（不是结论）。
+  // 与 KIN 段的分工：KIN 说"世上有别的同类"，HOWTO 说"怎么确认哪条是我"。
+  // 放在 identity 槽里而不是独立槽：这段是"我是谁"的一部分，拆开会被预算先裁掉。
+  let howtoBlock = ''
+  try { howtoBlock = identity.HOWTO } catch { howtoBlock = '' }
+  add('identity', [speciesLine, personaTxt, selfconBlock, howtoBlock, identityLine(cfg, isGroup, isOwnerHere)]
     .filter(Boolean).join('\n'), 1, { keep: true })
   if (platform === 'qq' || platform === 'wechat' || platform === 'douyin-dm' || isGroup) {
     add('audience', ownerLine(cfg, platform, userId, isGroup), 2, { keep: true })
@@ -534,7 +548,11 @@ export function assemble({ platform = 'qq', userText = '', chatId = '', userId =
   }
   const messages = [sys, ...recent, { role: 'user', content: userText }]
   // 与 shadow 路径同一份不变量（十遍第七遍：两条路线漂移过三次）。
-  assertAssembly(messages, { isGroup }, 'live')
+  assertAssembly(messages, {
+    isGroup,
+    ownerTitle: cfg.identity?.ownerTitle || cfg.identity?.callOwner || cfg.owner?.name,
+    ownerQQ: cfg.owner?.qq,
+  }, 'live')
 
   const chars = sys.content.length
   setValue('promptChars', chars)
