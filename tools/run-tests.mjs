@@ -47,7 +47,9 @@ const TESTS = [
   'wander-test.mjs',     // 自己逛 B 站：候选挑选/每日额度/播放时长格式化（2026-11-07）
   'research-test.mjs',        // 专题研究：六轴透镜/递归层级/引用校验/剪枝预算/注入块（2026-11-07）
   'research-stress-test.mjs', // 专题研究高压：依赖全挂/脏输出/伪造引用/多进程写/时钟回拨/规模上限（2026-11-07）
-  'persona-neutral-test.mjs', // 人格中性化：坏人格兜底/账本注入/族群块权限/两处锚同源（2026-11-07）
+  'persona-neutral-test.mjs', // 人格中性化：坏人格兜底/账本注入/族群块权限/两处锚同源（2026-11-07）
+  'identity-bio-test.mjs',    // 身份核验六层：化学/生物/心理/神经/主观/哲学（2026-11-10）
+  'identity-stress-test.mjs', // 身份核验高压：并发丢更新/坏数据/时钟回拨/极端参数/单层全挂（2026-11-10）
   'dsh-bridge-test.mjs',      // 能力桥：bot_* 工具形状与执行/命令白名单来自 bot.mjs/会话事件只收真人输入（2026-11-04）
   'session-cwd-test.mjs',     // 会话 cwd 自愈：旧工作目录不存在时必须换会话 id（否则每轮静默跑死）（2026-11-04）
   'lock-adversarial-test.mjs', // 锁对抗：release 认领/抢占原子性/多行 pid 解析/老格式兼容（2026-11-04）

@@ -26,6 +26,8 @@ import { dataPath } from '../lib/paths.mjs'
 import { swallow } from '../lib/swallow.mjs'
 import * as recall from './recall.mjs'
 import { kinText as kinTextOf, HOWTO as HOWTO_OF } from '../lib/self-context.mjs'
+// 六层仿生（化学/生物/心理/神经/主观/哲学）—— verify 的"人"那部分
+import * as bio from './identity-bio.mjs'
 
 const readJson = (f, d) => {
   try { return JSON.parse(fs.readFileSync(f, 'utf8')) } catch { return d }
@@ -176,33 +178,87 @@ export function externalCheck({ userText = '', platform = 'qq', chatId = '', use
  * @returns {{verdict:'mine'|'not-mine'|'unknown', internal:object, external:object, missing:string[], line:string}}
  */
 export function verify(userText, { platform = 'qq', chatId = '', userId = '', isGroup = false, isOwner, now = Date.now() } = {}) {
-  const internal = recallOwn(userText, { platform, chatId, userId, isGroup, isOwner, now })
+  // ── ① 生物层：先看今天有没有力气认真核 ────────────────────────────
+  // 累了就只核号（便宜），不翻记忆（贵）。这不是偷懒，是"脑子转不动"的形状。
+  const gate = bio.metabolicGate(now)
+
+  // ── ② 神经层：快通路（纯文本、零 IO）─────────────────────────────
+  const facts = selfFacts({ redactOwner: isGroup })
+  const fast = bio.fastPath(userText, {
+    name: facts.name, selfQQ: facts.selfQQ, biliMid: facts.biliMid,
+    claim: (() => { try { return String(require_config_selfClaim()) } catch { return '' } })(),
+  })
+
+  // ── ③ 心理层：认领阈值随"对方是谁 / 怎么说"变 ────────────────────
+  const bias = bio.psychBias({ isOwner: !!isOwner, isGroup, text: userText })
+
+  // ── ④ 慢通路：回想 + 核对（受门控）─────────────────────────────
+  const internal = gate.canDeep
+    ? recallOwn(userText, { platform, chatId, userId, isGroup, isOwner, now, limit: gate.limit || 4 })
+    : { hits: [], text: '', count: 0, skipped: true }
   const external = externalCheck({ userText, platform, chatId, userId, isGroup })
+
+  // ── ⑤ 哲学层：账号只排除、记忆才确认 ────────────────────────────
+  const judged = bio.judge({
+    accountOk: external.account.ok,
+    memoryCount: internal.count,
+    threshold: bias.threshold,
+    relationOk: !!isOwner,
+  })
+  const verdict = judged.verdict
+
+  // ── ⑥ 化学层：按结论打一次脉冲（受体随时间下调）─────────────────
+  const chemKind = verdict === 'not-mine' ? 'misread' : verdict === 'mine' ? 'confirmed' : 'doubt'
+  bio.chemReact(chemKind, { now, repeat: bio.askedRecently(now) + 1 })
+
+  // ── ⑦ 快慢冲突：以慢的为准，并记住"第一反应想岔了" ──────────────
+  //
+  // 2026-11-10 第8遍：第一版写成 `fast.verdict && fast.verdict !== verdict`，
+  // 于是 **fast=mine + slow=unknown 也被算成冲突** —— 可那不是"想岔了"，
+  // 那是"我第一反应像是我，但翻不出证据"。把它记成"想岔了"会让她的自知变假：
+  // 她会以为自己总是先认错，而事实是她只是记不清。
+  //
+  // 真正的冲突只有一种：两边都给出了明确结论，而且相反（我说是我，查完是别人）。
+  const CONCL = new Set(['mine', 'not-mine'])
+  const conflict = CONCL.has(fast.verdict) && CONCL.has(verdict) && fast.verdict !== verdict
+    ? { fast: fast.verdict, slow: verdict }
+    : null
+
+  // ── ⑧ 缺口清单 ────────────────────────────────────────────────
   const missing = []
-  let verdict = 'unknown'
+  if (internal.count === 0) missing.push(gate.canDeep ? '记忆里没查到这件事' : '没力气翻记忆')
+  if (external.account.ok === null) missing.push('没给出能核对的号')
+  if (external.talk.ok === null) missing.push('这个对话没有留底')
 
-  if (external.account.ok === false) {
-    verdict = 'not-mine'
-  } else if (internal.count > 0 && external.account.ok !== false) {
-    verdict = 'mine'
-  } else {
-    if (internal.count === 0) missing.push('记忆里没查到这件事')
-    if (external.account.ok === null) missing.push('没给出能核对的号')
-    if (external.talk.ok === null) missing.push('这个对话没有留底')
-  }
-
+  // ── ⑨ 主观层：说出口的是体验 ──────────────────────────────────
   const lines = []
-  if (internal.count > 0) lines.push('回想：记忆里有 ' + internal.count + ' 条对得上的——\n' + internal.text)
-  else lines.push('回想：记忆里没翻到这件事。')
+  if (internal.count > 0) lines.push('回想：记忆里有 ' + internal.count + ' 条沾得上的——\n' + internal.text)
+  else lines.push(gate.depth === 'none' ? '回想：这会儿脑子空，只核了号，没往记忆里翻。'
+    : gate.depth === 'shallow' ? '回想：翻了最近的那几条，没找着这件事。'
+    : '回想：记忆里没翻到这件事。')
   for (const k of ['account', 'image', 'talk']) if (external[k].line) lines.push('核对：' + external[k].line)
+  if (fast.verdict) lines.push('第一反应：' + (fast.verdict === 'mine' ? '像是我的' : '像是别人的') + '（' + fast.why + '）')
 
-  const head = verdict === 'mine' ? '结论：八成是你。'
-    : verdict === 'not-mine' ? '结论：不是你。'
-      : '结论：现在说不准。'
-  // 说不准时把缺口说出来 —— 这是"仿生"的关键：人可以记不清，但不能装作记得
+  const head = verdict === 'mine' ? '结论：是我。'
+    : verdict === 'not-mine' ? '结论：不是我。'
+      : '结论：说不准。'
   const tail = verdict === 'unknown' && missing.length ? '\n缺口：' + missing.join('；') + '。照实说记不清，别硬认。' : ''
+  const feel = bio.qualiaLine(verdict, { chem: bio.chemState(now), gate, bias, conflict })
 
-  return { verdict, internal, external, missing, line: head + '\n' + lines.join('\n') + tail }
+  // ── ⑩ 记账（代谢 + 事件账本），永不抛 ──────────────────────────
+  bio.metabolicSpend(gate)
+  bio.record({ verdict, kind: chemKind, conflict, now, text: userText })
+
+  return {
+    verdict, internal, external, missing, conflict, gate, bias, fast,
+    because: judged.because,
+    line: head + '\n' + lines.join('\n') + tail + '\n体感：' + feel,
+  }
+}
+
+/** 配置里的自称（快通路要用来判断"这句话是不是在说我"）。读不到就空串。 */
+function require_config_selfClaim() {
+  try { return config()?.identity?.selfClaim || '' } catch { return '' }
 }
 
 /* ── ⑤ 提示词块 ───────────────────────────────────────────────────── */
