@@ -24,7 +24,7 @@ process.env.BOT_DATA_DIR = TMP
 const neuron = await import('../tools/brain/cell/neuron.mjs')
 const field = await import('../tools/brain/field.mjs')
 const self = await import('../tools/brain/organ/self.mjs')
-const promises = await import('../tools/lib/promises.mjs')
+const promises = await import('../tools/lib/mind/promises.mjs')
 
 const NOW = Date.now()
 neuron.tick(NOW)

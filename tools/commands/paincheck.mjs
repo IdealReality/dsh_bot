@@ -1,4 +1,4 @@
-import { gatewayBase, gatewayToken } from '../lib/qq-gateway.mjs'
+import { gatewayBase, gatewayToken } from '../lib/qq/qq-gateway.mjs'
 // paincheck —— 全链扫描自检，问题直接注入"痛"（2026-11-05）。
 //
 // 病根（用户原话）：自检发现问题后只"分泌"——写日志、挂 diagnose 红项，
@@ -25,11 +25,11 @@ import { gatewayBase, gatewayToken } from '../lib/qq-gateway.mjs'
 //   默认：扫描 + 有问题注入痛 + 打印报告
 //   --quiet：只注入痛，不打印（给心跳定时调用）
 import fs from 'node:fs'
-import { config } from '../lib/config.mjs'
-import { dataPath, credentialsPath } from '../lib/paths.mjs'
-import { readJsonSafe } from '../lib/atomic.mjs'
-import { swallow } from '../lib/swallow.mjs'
-import * as wound from '../lib/wound.mjs'
+import { config } from '../lib/infra/config.mjs'
+import { dataPath, credentialsPath } from '../lib/infra/paths.mjs'
+import { readJsonSafe } from '../lib/infra/atomic.mjs'
+import { swallow } from '../lib/infra/swallow.mjs'
+import * as wound from '../lib/mind/wound.mjs'
 import * as neuron from '../brain/cell/neuron.mjs'
 import * as hpa from '../brain/organ/hpa.mjs'
 import * as pain from '../brain/organ/pain.mjs'

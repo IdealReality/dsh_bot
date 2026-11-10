@@ -1,0 +1,233 @@
+// office —— 她的办公桌（2026-11-09）
+//
+// 病根：聊天工具链的总预算 30 秒、单个工具 12 秒（agent.mjs 里写死的三层预算）。
+// 「写个脚本统计、把一批文件整理一下、把那几篇专栏都读完做个对比」这类活
+// 无论工具多齐全都装不进 12 秒 —— 于是她在 QQ 里只能说"我做不到"。
+//
+// 拆法（不是把预算调大，调大会让她每条闲聊都变慢）：
+//   聊天里只「立项 + 回执」（office_task，<1 秒）
+//   → 独立进程跑 office work（几十步、十几分钟，不钉住事件循环）
+//   → 跑完主动 QQ 汇报，产出落盘
+// 这就是 research 已经验证过的形态（research_topic → research work），不是新发明。
+//
+// 边界不变：她用的还是 tools.mjs 里那几个工具，路径/命令仍过 sandbox.mjs。
+// 后台进程多出来的只是「时间和步数」，不是「权限」。
+import fs from 'node:fs'
+import path from 'node:path'
+import { spawn } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
+import { dataPath } from '../infra/paths.mjs'
+import { config } from '../infra/config.mjs'
+import * as llm from './llm.mjs'
+import { CHAT_TOOLS, runTool } from './tools.mjs'
+import { sendOwnerQQ } from '../infra/notify.mjs'
+import { withLock } from '../../brain/store.mjs'
+
+const DIR = () => dataPath('office')
+const FILE = () => path.join(DIR(), 'tasks.json')
+const BOT = () => path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'bot.mjs')
+
+/** 办公时能用哪些工具：只读/写/跑/查，不给"再开一个研究任务"这种套娃。 */
+const NAMES = new Set([
+  'find_files', 'read_file', 'write_file', 'run_command',
+  'look_up', 'bili_search', 'bili_article', 'watch_video', 'check_memory',
+])
+export const OFFICE_TOOLS = CHAT_TOOLS.filter((t) => NAMES.has(t?.function?.name))
+
+function readAll() {
+  try { return JSON.parse(fs.readFileSync(FILE(), 'utf8')) } catch { return { rows: [] } }
+}
+function writeAll(s) {
+  fs.mkdirSync(DIR(), { recursive: true })
+  const t = FILE() + '.tmp'
+  fs.writeFileSync(t, JSON.stringify(s, null, 2))
+  fs.renameSync(t, FILE())
+}
+// 跨进程互斥：办公台的状态是**三个进程**在改（聊天里 start、worker 每步 patch、用户 stop）。
+// 2026-11-09（十遍第 5 遍）实测：read-modify-write 没有锁时并发会丢更新 ——
+// worker 写完 trace，恰好被一条 start 覆盖，进度就没了。全部走 brain/store 的 withLock。
+const LOCK = 'office-tasks'
+function patch(id, fn) {
+  const out = withLock(LOCK, () => {
+    const s = readAll()
+    const row = (s.rows || []).find((r) => r.id === id)
+    if (!row) return null
+    fn(row)
+    writeAll(s)
+    return row
+  })
+  return out || null
+}
+
+/**
+ * 回收僵尸任务（2026-11-09 第 5 遍）。
+ * 病根：worker 被 docker 重启/被杀时来不及改状态，任务永远停在 running ——
+ * 于是 `playing()` 一直为真，**此后所有办公任务都被"手上还压着一件"挡掉**。
+ * 判据用预算 + 2 分钟：过了这个点，进程一定不在了。
+ */
+function reapRows(s, now = Date.now()) {
+  let changed = false
+  for (const r of s.rows || []) {
+    if (r.state !== 'running' && r.state !== 'queued') continue
+    const budget = (Number(r.minutes) || 12) * 60_000 + 120_000
+    const since = Number(r.state === 'running' ? r.startedAt : r.createdAt) || 0
+    if (!since || now - since > budget) {
+      r.state = 'failed'
+      r.error = r.state === 'queued' ? '进程没起来（排队太久）' : '进程没了（超时未收尾）'
+      r.endedAt = now
+      changed = true
+    }
+  }
+  return changed
+}
+
+let seq = 0
+const newId = () => 'of-' + Date.now().toString(36) + '-' + (++seq).toString(36)
+
+/**
+ * 立项：只写状态 + 起进程，必须快（聊天工具预算 12 秒，实测 <1 秒）。
+ * @param {{goal:string, steps?:number, minutes?:number}} a
+ */
+export function start(a = {}) {
+  const goal = String(a.goal || '').replace(/\s+/g, ' ').trim()
+  if (!goal) return { ok: false, reason: '没给要做的事' }
+  if (goal.length > 800) return { ok: false, reason: '目标太长了，拆小一点' }
+  const cfg = config().office || {}
+  if (cfg.enabled === false) return { ok: false, reason: '办公台被关掉了（config.office.enabled=false）' }
+  const row = {
+    id: newId(), goal, state: 'queued',
+    steps: Math.min(40, Math.max(1, Number(a.steps) || Number(cfg.maxSteps) || 20)),
+    minutes: Math.min(60, Math.max(1, Number(a.minutes) || Number(cfg.maxMinutes) || 12)),
+    createdAt: Date.now(), startedAt: 0, endedAt: 0, step: 0, trace: [], final: '', error: '',
+  }
+  // 「检查有没有人在干 + 写进去」必须原子：两个 start 同时进来时，旧写法两边都看到空档，
+  // 于是同时起两个 worker，第二个会覆盖第一个的 trace（实测竞态窗口 ≈ 3ms）。
+  const claimed = withLock(LOCK, () => {
+    const s = readAll()
+    reapRows(s)
+    const busy = (s.rows || []).find((r) => r.state === 'running' || r.state === 'queued')
+    if (busy) { writeAll(s); return { busy: true, id: busy.id, goal: busy.goal, note: '手上还有一件没干完' } }
+    s.rows = [...(s.rows || []), row].slice(-80)
+    writeAll(s)
+    return { ok: true }
+  })
+  if (!claimed) return { ok: false, reason: '状态锁超时（另一个进程正在改办公台），稍后再试' }
+  if (claimed.busy) return { ok: true, ...claimed }
+  let worker = false
+  try {
+    const p = spawn(process.execPath, [BOT(), 'office', 'work', '--id', row.id], {
+      detached: true, stdio: 'ignore', cwd: dataPath(),
+    })
+    p.unref()
+    worker = true
+  } catch { worker = false }
+  if (!worker) {
+    // 起不来就如实记，别让它占着"queued"把后续任务全挡在外面。
+    patch(row.id, (x) => { x.state = 'failed'; x.error = '后台进程没起来'; x.endedAt = Date.now() })
+    return { ok: false, id: row.id, reason: '后台进程没起来（任务已记下但不会自己跑）' }
+  }
+  return { ok: true, id: row.id, goal, worker }
+}
+
+/** 后台真正干活（独立进程）。 */
+export async function work(id) {
+  const row0 = readAll().rows?.find((r) => r.id === id)
+  if (!row0) return { ok: false, reason: '没这个任务' }
+  if (row0.state === 'running') return { ok: false, reason: '已经在跑了' }
+  const row = patch(id, (r) => { r.state = 'running'; r.startedAt = Date.now(); r.error = '' })
+  if (!row) return { ok: false, reason: '任务不存在（被清理了？）' }
+  const outDir = path.join(DIR(), id)
+  fs.mkdirSync(outDir, { recursive: true })
+  const deadline = Date.now() + (Number(row.minutes) || 12) * 60_000
+  const maxSteps = Number(row.steps) || 20
+
+  const sys = [
+    '你在一张**办公桌**上做事，不是在聊天。用户给你的是一件具体的事，你要真的做完，然后把结果交出来。',
+    `你现在有一台自己的机器（容器里的 /home/dsh），可以用工具：${OFFICE_TOOLS.map((t) => t.function.name).join('、')}。`,
+    `产出（脚本、报告、整理结果）写到 .data/office/${id}/ 下面。`,
+    '纪律：',
+    '① 每步都想清楚再动手；动手前别宣布"我马上做"，直接用工具。',
+    '② 工具失败就换办法，别假装成功。三次同一失败就停下来说清楚卡在哪。',
+    '③ 最后一条回复不带工具调用，直接给结论：做了什么、结果在哪、有什么没做成。',
+    '④ 结论要能被检验：数字从工具输出里来，不许估。',
+    // 2026-11-09：她的 CLI 里本来就有一堆"重手"（剪片/配音/生图/看自己代码/投稿），
+    // 聊天工具没暴露它们，但办公台可以跑 —— 否则"创作能力"这条还是够不着。
+    '⑤ 需要更强的手（剪片 produce、配音 sing、画表情包 sticker、看自己的代码 selfsrc、B站投稿）时，'
+      + `用 run_command 跑 \`${process.execPath} ${BOT()} <命令>\`，命令全集用 \`${process.execPath} ${BOT()} help\` 现查。`,
+  ].join('\n')
+
+  let msgs = [{ role: 'system', content: sys }, { role: 'user', content: row.goal }]
+  const trace = []
+  let final = ''
+  let step = 0
+  try {
+    for (; step < maxSteps && Date.now() < deadline; step++) {
+      const left = deadline - Date.now()
+      if (left < 5000) break
+      const r = await llm.chatRaw(msgs, {
+        purpose: 'tool', tools: OFFICE_TOOLS, toolChoice: 'auto',
+        max_tokens: 1200, timeoutMs: Math.min(60_000, left),
+      })
+      const msg = r?.message || {}
+      const content = String(msg.content || '').trim()
+      const calls = Array.isArray(msg.tool_calls) ? msg.tool_calls : []
+      if (!calls.length) { final = content || String(r?.text || ''); break }
+      msgs.push({ role: 'assistant', content, tool_calls: calls })
+      for (const c of calls) {
+        const name = String(c?.function?.name || '')
+        let args = {}
+        try { args = JSON.parse(String(c?.function?.arguments || '{}')) } catch { args = {} }
+        const res = await runTool(name, args).catch((e) => ({ ok: false, result: '工具异常：' + String(e?.message || e).slice(0, 120) }))
+        trace.push({ at: Date.now(), name, args, ok: !!res?.ok, result: String(res?.result || '').slice(0, 500) })
+        msgs.push({ role: 'tool', tool_call_id: String(c.id || ''), content: String(res?.result || (res?.ok ? '完成' : '失败')).slice(0, 3000) })
+      }
+      patch(id, (x) => { x.step = step + 1; x.trace = trace.slice(-40) })
+      // 上下文太长就压成一条进度摘要。
+      // ⚠️ 绝不能对 messages 直接切片：assistant(tool_calls) 与它的 tool 结果是一个原子对，
+      // 切在中间会让下游 API 报 "tool_call_id 对应的消息不存在"，整条任务当场失败。
+      // 压成「system + 目标 + 一条进度 user 消息」永远合法。
+      if (msgs.length > 44) {
+        const notes = trace.slice(-10).map((t) => '- ' + t.name + (t.ok ? ' 成功：' : ' 失败：') + String(t.result).replace(/\s+/g, ' ').slice(0, 120)).join('\n')
+        msgs = [msgs[0], msgs[1], { role: 'user', content: '【进度摘要】到这里做过这些：\n' + notes + '\n接着做，别重复已经完成的步骤。' }]
+      }
+    }
+    if (!final) {
+      // 步数/时间用完了。直接写"没来得及收尾"等于把已经拿到的结果扔掉 ——
+      // 实测她常常在最后一步才拿到数据。这里给模型一次"只说话不动手"的收尾机会。
+      try {
+        const notes = trace.slice(-12).map((t) => '- ' + t.name + (t.ok ? ' 成功：' : ' 失败：') + String(t.result).replace(/\s+/g, ' ').slice(0, 200)).join('\n')
+        final = String(await llm.chat([
+          { role: 'system', content: '你在给一个已经用了步数预算的任务写结论。只能用文字，不能再调工具。' },
+          { role: 'user', content: '目标：' + row.goal + '\n\n已经做到的事（工具记录）：\n' + (notes || '（没动手）') + '\n\n请用三到五句说清：做成了什么、关键结果是什么、哪里没做完。数字只写记录里有的。' },
+        ], { purpose: 'tool', max_tokens: 600, timeoutMs: 25_000 }) || '').trim()
+      } catch { final = '' }
+      if (!final) final = '（步数/时间用完了，没来得及收尾。已做的步骤见报告。）'
+    }
+    const report = ['# ' + row.goal, '', '产出目录：`' + outDir + '`', '', final]
+      .concat(['', '## 执行记录', ...trace.map((t) => `- ${t.ok ? '✅' : '❌'} \`${t.name}\` ${JSON.stringify(t.args).slice(0, 160)}`)])
+      .join('\n')
+    try { fs.writeFileSync(path.join(outDir, 'report.md'), report, 'utf8') } catch { /* 报告写不成不影响结论 */ }
+    patch(id, (x) => { x.state = 'done'; x.endedAt = Date.now(); x.final = final.slice(0, 2000); x.trace = trace.slice(-40); x.step = step })
+    const okCount = trace.filter((t) => t.ok).length
+    const say = '「' + row.goal.slice(0, 40) + '」做完了。'
+      + (trace.length ? `动了 ${trace.length} 次手（成 ${okCount}），` : '')
+      + '结论：' + final.replace(/\s+/g, ' ').slice(0, 320)
+      + '\n（详细在 .data/office/' + id + '/report.md）'
+    await sendOwnerQQ(say).catch(() => false)
+    return { ok: true, id, final }
+  } catch (e) {
+    const msg = String(e?.message || e).slice(0, 300)
+    patch(id, (x) => { x.state = 'failed'; x.endedAt = Date.now(); x.error = msg; x.trace = trace.slice(-40) })
+    await sendOwnerQQ('「' + row.goal.slice(0, 40) + '」没做成：' + msg.slice(0, 200)).catch(() => false)
+    return { ok: false, reason: msg }
+  }
+}
+
+export function state(id) {
+  const rows = readAll().rows || []
+  return id ? rows.find((r) => r.id === id) || null : rows
+}
+export function stop(id) {
+  const row = patch(id, (r) => { if (r.state === 'running' || r.state === 'queued') { r.state = 'stopped'; r.endedAt = Date.now() } })
+  return row ? { ok: true, id, state: row.state } : { ok: false, reason: '没这个任务' }
+}

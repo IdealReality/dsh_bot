@@ -15,7 +15,7 @@ fs.writeFileSync(process.env.BOT_CONFIG, JSON.stringify({
   identity: { name: '小锦鲤', selfClaim: '咱', ownerTitle: '铲屎官' },
 }))
 
-const { selfName, selfClaim, ownerTitle, selfIntro, fill } = await import('../tools/lib/persona-voice.mjs')
+const { selfName, selfClaim, ownerTitle, selfIntro, fill } = await import('../tools/lib/self/persona-voice.mjs')
 
 assert.equal(selfName(), '小锦鲤')
 assert.equal(selfClaim(), '咱')

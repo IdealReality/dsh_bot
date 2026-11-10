@@ -9,7 +9,7 @@
 // 化脓阈值（M58 反例：对所有状态都说「心里攒着事」= 过敏体质 = 电路板）：
 //   快痛只认「真的新伤」：同源重复登记（hits++）不重复喊疼；复发伤因敏化更痛
 //   慢痛只认「还在流血」：有开放/化脓伤口才有钝痛感；门禁全绿愈合后钝痛即停
-import { woundSnapshot } from '../../lib/wound.mjs'
+import { woundSnapshot } from '../../lib/mind/wound.mjs'
 import * as neuron from '../cell/neuron.mjs'
 import * as hpa from './hpa.mjs'
 

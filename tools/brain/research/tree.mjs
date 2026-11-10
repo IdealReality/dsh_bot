@@ -14,9 +14,9 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { readJson, writeJsonAtomic, mutateJson } from '../json.mjs'
-import { dataPath } from '../../lib/paths.mjs'
+import { dataPath } from '../../lib/infra/paths.mjs'
 import { LENS_ORDER, lensOf, questionFor } from './lenses.mjs'
-import { swallow } from '../../lib/swallow.mjs'
+import { swallow } from '../../lib/infra/swallow.mjs'
 
 export const MAX_NODES = 240
 export const MAX_CLAIMS_PER_NODE = 24

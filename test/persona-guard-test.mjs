@@ -28,7 +28,7 @@ const ok = (name, pass, detail = '') => {
 }
 
 const A = await import('../lib/agent-prompt.mjs')
-const { configPath } = await import('../tools/lib/paths.mjs')
+const { configPath } = await import('../tools/lib/infra/paths.mjs')
 
 const writePersona = (t) => fs.writeFileSync(path.join(TMP, 'persona.md'), t)
 const dropPersona = () => fs.rmSync(path.join(TMP, 'persona.md'), { force: true })

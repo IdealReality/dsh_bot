@@ -8,7 +8,7 @@
 //   ④ 静息值可用、钳位有效、gap 永不为负
 //   ⑤ 无状态：纯函数，同参数同分布（不依赖前次调用）
 import assert from 'node:assert'
-import { phase, gap } from '../tools/lib/breath.mjs'
+import { phase, gap } from '../tools/lib/mind/breath.mjs'
 
 // ── ① 频率轴：周期随 arousal 收缩 ──
 {

@@ -13,7 +13,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { chooseKind, decorateText, pickCommentImage, describeKind, voiceNoteArgs, EXTS, KAOMOJI, EMOJI } from '../tools/lib/reply-style.mjs'
+import { chooseKind, decorateText, pickCommentImage, describeKind, voiceNoteArgs, EXTS, KAOMOJI, EMOJI } from '../tools/lib/qq/reply-style.mjs'
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..')
 const read = (p) => fs.readFileSync(path.isAbsolute(p) ? p : path.join(ROOT, p), 'utf8')
@@ -116,7 +116,7 @@ await ok('语音条：封面+音轨合成 mp4 的参数对得上', () => {
 
 // ── 命令层接线 ────────────────────────────────────────────────────────────
 const rep = read('tools/commands/replies.mjs')
-const bw = read('tools/lib/bili-write.mjs')
+const bw = read('tools/lib/bili/bili-write.mjs')
 
 
 

@@ -35,9 +35,9 @@ fs.writeFileSync(cfgFile, JSON.stringify({
 }))
 process.env.BOT_CONFIG = cfgFile
 
-const paths = await import('../tools/lib/paths.mjs')
-const memory = await import('../tools/lib/memory.mjs')
-const { buildMessages } = await import('../tools/lib/persona.mjs')
+const paths = await import('../tools/lib/infra/paths.mjs')
+const memory = await import('../tools/lib/mind/memory.mjs')
+const { buildMessages } = await import('../tools/lib/self/persona.mjs')
 
 if (!paths.dataDir.startsWith(tmp)) {
   console.error(`✗ 隔离失败：dataDir=${paths.dataDir} 指向了真实目录，测试中止`)
@@ -99,7 +99,7 @@ const privAll = allOf({ platform: 'qq', userText: '在吗', chatId: 'qq:10001', 
 ok('私聊 → 群友那句不会被当成用户说的', !/\[QQ\] 用户：既然你叫我用户/.test(privAll))
 
 // ⑦ 结尾事实块（10-26 第二次翻车后加的：11:54 她仍对群友说"用户早上好"）
-const { addressesOwner } = await import('../tools/lib/persona.mjs')
+const { addressesOwner } = await import('../tools/lib/self/persona.mjs')
 ok('群友轮 → 末尾事实块点名了说话人', grp.includes('这一轮的事实') && grp.includes('2208444939'))
 ok('群友轮 → 末尾写明"这个号不是"用户号', grp.includes('这个号不是'))
 ok('群友轮 → 末尾禁止出现「用户」称呼', grp.includes('不许出现「用户」这个称呼'))

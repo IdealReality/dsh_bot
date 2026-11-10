@@ -6,10 +6,10 @@
 // 取材 (M58"别猜先看" + write/think 执行器留空的教训): 材料全部用**她的真语料**
 //   (最近 24h assistant 原话), LLM 只做提炼且可选; 没有材料就什么都不产出 -- 宁可不照镜子。
 import { readJsonl, appendJsonl } from '../json.mjs'
-import { dataPath } from '../../lib/paths.mjs'
-import { swallow } from '../../lib/swallow.mjs'
+import { dataPath } from '../../lib/infra/paths.mjs'
+import { swallow } from '../../lib/infra/swallow.mjs'
 import * as selfcon from './selfcon.mjs'
-import * as bond from '../../lib/bond.mjs'
+import * as bond from '../../lib/mind/bond.mjs'
 import * as field from '../field.mjs'
 import * as rhythm from '../rhythm.mjs'
 import { neuronPath } from '../paths.mjs'

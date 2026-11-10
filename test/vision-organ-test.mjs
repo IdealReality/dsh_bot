@@ -21,7 +21,7 @@ process.env.HOME = SANDBOX
 process.env.DSH_HOME = path.join(SANDBOX, '.dsh')
 
 const vision = await import('../tools/brain/organ/vision.mjs')
-const { dataPath } = await import('../tools/lib/paths.mjs')
+const { dataPath } = await import('../tools/lib/infra/paths.mjs')
 const { mutateJson } = await import('../tools/brain/json.mjs')
 
 const VISION_JSON = () => dataPath('brain', 'meta', 'vision.json')

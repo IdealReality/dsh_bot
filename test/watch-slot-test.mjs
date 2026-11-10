@@ -29,8 +29,8 @@ const ok = (cond, label) => {
   if (!cond) failed++
 }
 
-const W = await import('../tools/lib/watchlog.mjs')
-const P = await import('../tools/lib/persona.mjs')
+const W = await import('../tools/lib/media/watchlog.mjs')
+const P = await import('../tools/lib/self/persona.mjs')
 
 const now = Date.now()
 W.record({

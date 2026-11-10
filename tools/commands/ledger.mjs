@@ -7,7 +7,7 @@
 //   node bot.mjs ledger --fresh        # 不吃缓存，重扫会话日志
 //
 // 她的用法（闭环的关键）：**她自己就能查**，不用问用户。
-import * as L from '../lib/ledger.mjs'
+import * as L from '../lib/work/ledger.mjs'
 
 function arg(argv, name) {
   const i = argv.indexOf(name)

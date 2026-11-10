@@ -7,7 +7,7 @@
 // 微信永远不进（I7）：文件名带 wechat 的直接跳过，platform=wechat 的行也跳过。
 import fs from 'node:fs'
 import path from 'node:path'
-import { dataPath } from '../lib/paths.mjs'
+import { dataPath } from '../lib/infra/paths.mjs'
 import { appendJsonl, readJsonl, readJson, mutateJson, shortHash, ensureDir } from './json.mjs'
 import { epFile, semDir } from './paths.mjs'
 import { normalize } from './event.mjs'

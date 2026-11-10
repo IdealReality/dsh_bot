@@ -19,9 +19,9 @@ process.env.HOME = sandbox
 process.env.BOT_HOME = path.join(sandbox, '.data')
 // 注：这个变量是测试自己约定的，路径名跟随数据目录改名
 
-const E = await import('../tools/lib/emotion.mjs')
-const tts = await import('../tools/lib/tts.mjs')
-const prosody = await import('../tools/lib/prosody.mjs')
+const E = await import('../tools/lib/mind/emotion.mjs')
+const tts = await import('../tools/lib/media/tts.mjs')
+const prosody = await import('../tools/lib/media/prosody.mjs')
 
 let passed = 0
 function ok(name, fn) {
@@ -167,7 +167,7 @@ await okAsync('只给一段时不拼接（直接复制）', async () => {
 
 console.log('打分器（L0）')
 ok('评分器脚本存在且用的是 pyin + 起伏/音域公式', () => {
-  const py = fs.readFileSync(new URL('../tools/lib/prosody.py', import.meta.url), 'utf8')
+  const py = fs.readFileSync(new URL('../tools/lib/media/prosody.py', import.meta.url), 'utf8')
   assert.match(py, /librosa\.pyin/)
   assert.doesNotMatch(py, /librosa\.yin\(/)          // yin 会把噪声估成倍频，起伏虚高
   assert.match(py, /rng \* 0\.5 \+ sd \* 1\.2/)
@@ -204,7 +204,7 @@ ok('她能看懂"方括号不会显示给用户"', () => {
 console.log('源码防线')
 const read = (p) => fs.readFileSync(new URL('../' + p, import.meta.url), 'utf8')
 ok('tts.mjs：默认 cut0、候选循环、一句话一个音色', () => {
-  const src = read('tools/lib/tts.mjs')
+  const src = read('tools/lib/media/tts.mjs')
   assert.match(src, /text_split_method: override\.text_split_method \|\| v\.text_split_method \|\| 'cut0'/)
   // 10-27 拍板：候选只换采样运气，不换嗓子 —— 不许再按 pool 下标轮换参考段
   assert.match(src, /const ref = pool\[0\]/)
@@ -224,7 +224,7 @@ ok('voice 命令有 emo 子命令（建/列/试听情绪参考段）', () => {
   assert.match(src, /voice emo list \| build/)
 })
 ok('persona 只在语音开着时才教她写标签', () => {
-  const src = read('tools/lib/persona.mjs')
+  const src = read('tools/lib/self/persona.mjs')
   assert.match(src, /cfg\.qq\?\.voice_enabled !== false/)
   assert.match(src, /emotionTagPrompt\(platform\)/)
 })

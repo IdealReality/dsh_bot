@@ -16,14 +16,14 @@ process.env.USERPROFILE = SANDBOX
 process.env.HOME = SANDBOX
 // 2026-11-02：swallow 必须在隔离之后动态 import —— 静态 import 会在 env 生效前
 // 加载 paths.mjs，把真实 HOME 缓存进去，社交流水就写进用户真的 ~/.data 了（已发生过）。
-const { swallow } = await import('../tools/lib/swallow.mjs')
+const { swallow } = await import('../tools/lib/infra/swallow.mjs')
 
 const ROOT = path.resolve(import.meta.dirname, '..')
-const V = await import('file:///' + path.join(ROOT, 'tools/lib/video.mjs').replace(/\\/g, '/'))
-const D = await import('file:///' + path.join(ROOT, 'tools/lib/debut.mjs').replace(/\\/g, '/'))
-const S = await import('file:///' + path.join(ROOT, 'tools/lib/social-log.mjs').replace(/\\/g, '/'))
+const V = await import('file:///' + path.join(ROOT, 'tools/lib/media/video.mjs').replace(/\\/g, '/'))
+const D = await import('file:///' + path.join(ROOT, 'tools/lib/self/debut.mjs').replace(/\\/g, '/'))
+const S = await import('file:///' + path.join(ROOT, 'tools/lib/work/social-log.mjs').replace(/\\/g, '/'))
 const P = await import('file:///' + path.join(ROOT, 'tools/commands/produce.mjs').replace(/\\/g, '/'))
-const T = await import('file:///' + path.join(ROOT, 'tools/lib/tts.mjs').replace(/\\/g, '/'))
+const T = await import('file:///' + path.join(ROOT, 'tools/lib/media/tts.mjs').replace(/\\/g, '/'))
 
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8')
 const results = []
@@ -124,7 +124,7 @@ await ok('转义：Windows 路径在滤镜里要写成 D\\:/x/y', () => {
 // ── ④ 运镜 ──────────────────────────────────────────────────────────────────
 await ok('运镜：六种都有，且平移把总帧数写进表达式（不是裸 D）', () => {
   assert.equal(V.MOVE_KEYS.length, 6)
-  const src = read('tools/lib/video.mjs')
+  const src = read('tools/lib/media/video.mjs')
   // 只看 MOVES 定义那一段、并且去掉注释：注释里写了 on/D 这个反面教材
   const block = src.slice(src.indexOf('const MOVES = {'), src.indexOf('export const MOVE_KEYS'))
   const code = block.split('\n').filter((l) => !l.trim().startsWith('//')).join('\n')
@@ -312,7 +312,7 @@ await ok('社交流水：能从老台账 bili-outbox.md 补历史，且补第二
 
 // ── ⑩ 源码守卫（这些接错了就是"功能静悄悄不生效"）──────────────────────────
 await ok('写入链路：点赞/投币/关注都要进社交流水（不然用户永远不知道她点了谁）', () => {
-  const s = read('tools/lib/bili-write.mjs')
+  const s = read('tools/lib/bili/bili-write.mjs')
   assert.match(s, /capRecord\('like', \{ bvid, title: info\.title \}\)/)
   assert.match(s, /capRecord\('coin', \{ bvid, title: info\.title/)
   assert.match(s, /capRecord\('follow',/)
@@ -320,7 +320,7 @@ await ok('写入链路：点赞/投币/关注都要进社交流水（不然用�
 })
 
 await ok('发言台账：recordBili 同时写结构化流水（散文 + 机器可查两份）', () => {
-  const s = read('tools/lib/outbox.mjs')
+  const s = read('tools/lib/qq/outbox.mjs')
   assert.match(s, /social-log\.mjs/)
   assert.match(s, /KIND_MAP/)
 })
@@ -354,7 +354,7 @@ await ok('命令表：produce + social 都在，且都导出 run（bot.mjs 只�
 })
 
 await ok('配置：视频与社交日报的默认值都在（0 = 不限 / 23:30 推）', () => {
-  const s = read('tools/lib/config.mjs')
+  const s = read('tools/lib/infra/config.mjs')
   assert.match(s, /frames: 2/)
   assert.match(s, /biliProduce: \{ enabled: true, dailyMax: 2 \}/)
   assert.match(s, /socialDigest: \{ enabled: true, at: '23:30'/)
@@ -413,7 +413,7 @@ await ok('剪静音不能毁音质：输出必须是原声的波形，不是 ±1
 })
 
 await ok('只重做音轨：makeFilm 支持 reuseVisual，且时间轴对不上会自动重渲染', () => {
-  const s = read('tools/lib/video.mjs')
+  const s = read('tools/lib/media/video.mjs')
   assert.match(s, /opts\.reuseVisual/)
   assert.match(s, /Math\.abs\(probeDur\(visualFile, cfg\) - timeline\.total\) <= 0\.2/)
   const p = read('tools/commands/produce.mjs')
@@ -444,7 +444,7 @@ await ok('漏字闸门：16 字念 1.07 秒 = 15 字/秒，必须被拦下来', 
   assert.match(s, /export async function synthChecked/)
   assert.match(s, /拆两句念/)          // 实在念不好就拆开念
   assert.match(s, /finalize\(/)          // 选中的 take 落地，临时 take 清掉
-  assert.match(read('tools/lib/video.mjs'), /sc\.voiceDur = r\.dur/)  // 剪静音归 makeFilm
+  assert.match(read('tools/lib/media/video.mjs'), /sc\.voiceDur = r\.dur/)  // 剪静音归 makeFilm
 })
 
 await ok('音色护栏：配音把 speed_factor 钉死 1.0、温度钉死 1.0（改一点就是变调/电音）', () => {
@@ -492,7 +492,7 @@ await ok('参考段体检（10-27 修正）：留白不算进配比 —— 音�
 })
 
 await ok('参考池兜底：默认参考不合格时自动换成她的情绪参考段（嗓子不变）', () => {
-  const s = read('tools/lib/tts.mjs')
+  const s = read('tools/lib/media/tts.mjs')
   assert.match(s, /export function refSanity/)
   const iPool = s.indexOf('export function refPool(')
   const iRaw = s.indexOf('function refPoolRaw(')
@@ -526,7 +526,7 @@ await ok('台词情绪映射：撒娇/生气/温柔各归各的参考', () => {
 })
 
 await ok('剪辑自洽：makeFilm 先剪静音再排时间轴，并把同步校验写进 sync.json', () => {
-  const s = read('tools/lib/video.mjs')
+  const s = read('tools/lib/media/video.mjs')
   const iTrim = s.indexOf('trimVoices !== false')
   const iTimeline = s.indexOf('const timeline = buildTimeline(scenes, spec, { intro: opts.intro')
   assert.ok(iTrim > 0 && iTimeline > iTrim, '修剪必须在排时间轴之前')
@@ -541,7 +541,7 @@ await ok('重剪模式：--reuse 不重新生图，老包缺 plan.json 时能从
   assert.match(s, /画面 ♻ 沿用已有配图/)
 })
 
-const R = await import('../tools/lib/refclean.mjs')
+const R = await import('../tools/lib/qq/refclean.mjs')
 await ok('参考段清洗（10-27）：中间的 2s 死空气被挤掉，首尾静音不留，文本跟着走', () => {
   const src = path.join(SANDBOX, 'ref-hole.wav')
   // 构造：0.3s 静音 + 0.5s 说话 + 2.0s 死空气 + 0.5s 说话 + 0.3s 静音（用 concat 拼，别用 filter 图）
@@ -581,7 +581,7 @@ await ok('静态响度：只加固定增益，时长一点不变（不做动态�
 })
 
 await ok('人声总线不吃 loudnorm（10-27：动态归一会把人声"泵"出机器味）', () => {
-  const s = read('tools/lib/video.mjs')
+  const s = read('tools/lib/media/video.mjs')
   const iCompose = s.indexOf('export function composeAudio')
   const body = s.slice(iCompose, s.indexOf('export function mux', iCompose))
   // 只看真正拼进滤镜串的部分，注释里提到 loudnorm（说明为什么不用）不算

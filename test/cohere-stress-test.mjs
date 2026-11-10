@@ -202,7 +202,7 @@ console.log('\n[化学层]')
 // ── 十、让位必须按会话隔离（十遍第八遍）─────────────────────────────
 console.log('\n[会话级让位]')
 {
-  const Q = await import('../tools/lib/inbound-seq.mjs')
+  const Q = await import('../tools/lib/qq/inbound-seq.mjs')
   const t0 = Date.now()
   const a1 = Q.markInbound(t0, 'qq:111')
   const b1 = Q.markInbound(t0 + 100, 'qq:222')
@@ -229,7 +229,7 @@ console.log('\n[伪造与超长]')
 // ── 十二、"该查没查"判定（十遍之后的默认上网）──────────────────────
 console.log('\n[该查没查]')
 {
-  const G = await import('../tools/lib/search-gate.mjs')
+  const G = await import('../tools/lib/work/search-gate.mjs')
   const q = (text, extra = {}) => G.needsSearch({ userText: text, percept: P.decode({ text, at: now }), toolTrace: [], answer: '', ...extra })
 
   ok('外部事实问题 → 该查', q('大肥鱼小课堂是啥？B站上有吗').needed === true, JSON.stringify(q('大肥鱼小课堂是啥？B站上有吗')))

@@ -32,7 +32,7 @@ fs.writeFileSync(CFG, JSON.stringify({
 process.env.BOT_CONFIG = CFG
 
 const { level, recordBloodDebt, recordSideUse, collateralize, sweep, describeCollateral } =
-  await import('../tools/lib/collateral.mjs')
+  await import('../tools/lib/mind/collateral.mjs')
 
 // ── ① 配置齐备 → level 出侧支级 ──
 {

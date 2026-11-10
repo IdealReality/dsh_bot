@@ -22,7 +22,7 @@ const ok = (name, cond, extra = '') => {
   else { fail++; console.log(`  ✗ ${name}${extra ? ' — ' + extra : ''}`) }
 }
 
-const S = await import('../tools/lib/search-engines.mjs')
+const S = await import('../tools/lib/bili/search-engines.mjs')
 
 // ── 真实 360 结果块（2026-11-08 实测抓取，属性顺序照抄） ──────────────────
 const SO_BLOCK = `<ul class="result"><li class="res-list" data-result-type="normal" data-result-pos="1"><h3 class="res-title " >

@@ -32,7 +32,7 @@ console.log('\n[并发：4 进程 × 25 次 record，一条都不能丢]')
   const before = B.state().asked
   const kids = []
   for (let i = 0; i < 4; i++) {
-    kids.push(spawnSync(process.execPath, [import.meta.filename, '--worker'], { env: process.env, encoding: 'utf8' }))
+    kids.push(spawnSync(process.execPath, [import.meta.filename, '--worker'], { env: process.env, encoding: 'utf8', timeout: 60_000 }))
   }
   const failed = kids.filter((k) => k.status !== 0)
   const after = B.state().asked

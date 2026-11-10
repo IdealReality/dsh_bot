@@ -4,7 +4,7 @@
 // 插件热重载一次就有两份 mindTick 在跑、两份同时写记忆/发消息。
 import './_isolate.mjs'
 import assert from 'node:assert'
-import { every, clear, disposeAll, snapshot, stale } from '../tools/lib/lifecycle.mjs'
+import { every, clear, disposeAll, snapshot, stale } from '../tools/lib/self/lifecycle.mjs'
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 

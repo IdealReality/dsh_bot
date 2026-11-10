@@ -26,7 +26,7 @@ writeCfg({
 })
 process.env.BOT_CONFIG = CFG
 
-const { gate, tick, feverSense, immuneSnapshot } = await import('../tools/lib/immune.mjs')
+const { gate, tick, feverSense, immuneSnapshot } = await import('../tools/lib/mind/immune.mjs')
 const field = await import('../tools/brain/field.mjs')
 
 // ── ① 耐受 ──

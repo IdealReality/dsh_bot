@@ -29,9 +29,9 @@ fs.writeFileSync(cfgFile, JSON.stringify({
 }))
 process.env.BOT_CONFIG = cfgFile
 
-const paths = await import('../tools/lib/paths.mjs')
-const memory = await import('../tools/lib/memory.mjs')
-const { buildMessages } = await import('../tools/lib/persona.mjs')
+const paths = await import('../tools/lib/infra/paths.mjs')
+const memory = await import('../tools/lib/mind/memory.mjs')
+const { buildMessages } = await import('../tools/lib/self/persona.mjs')
 
 if (!paths.dataDir.startsWith(tmp)) {
   console.error(`✗ 隔离失败：dataDir=${paths.dataDir} 指向了真实目录，测试中止`)
@@ -73,7 +73,7 @@ console.log('\n[2] 群聊 system 不泄漏私聊原话（groupPrivateRecall=fals
 console.log('\n[3] 开关默认值 = 保持老口径')
 {
   const raw = JSON.parse(fs.readFileSync(cfgFile, 'utf8'))
-  const cfgMod = await import('../tools/lib/config.mjs')
+  const cfgMod = await import('../tools/lib/infra/config.mjs')
   ok('DEFAULTS 里有 privacy.groupPrivateRecall', cfgMod.DEFAULTS?.privacy?.groupPrivateRecall === true)
   ok('配置里显式 false 生效（本测试就是 false）', raw.privacy.groupPrivateRecall === false)
 }

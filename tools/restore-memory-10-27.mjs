@@ -11,8 +11,8 @@
 //   node tools/restore-memory-10-27.mjs --go     # 真写
 import fs from 'node:fs'
 import path from 'node:path'
-import { dataPath } from './lib/paths.mjs'
-import { swallow } from './lib/swallow.mjs'
+import { dataPath } from './lib/infra/paths.mjs'
+import { swallow } from './lib/infra/swallow.mjs'
 
 const GO = process.argv.includes('--go')
 const bakOf = (base) => fs.readdirSync(path.dirname(dataPath(base)))

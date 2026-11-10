@@ -14,7 +14,7 @@ const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'bot-cfg-'))
 process.env.BOT_DATA_DIR = TMP
 process.env.BOT_CONFIG = path.join(TMP, 'bot.config.json')
 
-const { DEFAULTS, config } = await import('../tools/lib/config.mjs')
+const { DEFAULTS, config } = await import('../tools/lib/infra/config.mjs')
 
 // ── 1. 顶层必须覆盖所有"用户会用到"的域 ────────────────────────────────────
 for (const k of ['identity', 'owner', 'platforms', 'qq', 'wechat', 'llm', 'guard', 'brain', 'mind', 'dream', 'tattle', 'wander', 'diary', 'imageGen', 'vision', 'video']) {

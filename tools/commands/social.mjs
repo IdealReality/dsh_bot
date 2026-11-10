@@ -10,8 +10,8 @@
 //
 // 数据源：~/.data/bili-social.jsonl（每条都标了 toOwner）
 import fs from 'node:fs'
-import { config } from '../lib/config.mjs'
-import * as S from '../lib/social-log.mjs'
+import { config } from '../lib/infra/config.mjs'
+import * as S from '../lib/work/social-log.mjs'
 
 function argVal(argv, k, d = '') { const i = argv.indexOf(k); return i >= 0 ? (argv[i + 1] ?? d) : d }
 function has(argv, k) { return argv.includes(k) }
@@ -70,7 +70,7 @@ export async function run(argv = []) {
   if (has(argv, '--push')) {
     const text = S.digestText(recs, { limit: 14 })
     if (!text) { console.log('（没东西可推，跳过）'); return }
-    const { sendOwnerQQ } = await import('../lib/notify.mjs')
+    const { sendOwnerQQ } = await import('../lib/infra/notify.mjs')
     const head = `📣 我在B站今天干了这些（${recs.length} 条，${invisible.length} 条没 @ 你）\n\n`
     const ok = await sendOwnerQQ(head + text)
     console.log(ok ? '✓ 摘要已推到用户 QQ' : '✗ 推送失败（看上面日志）')

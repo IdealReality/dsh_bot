@@ -22,9 +22,9 @@ fs.writeFileSync(cfgPath, JSON.stringify({
 }))
 process.env.BOT_CONFIG = cfgPath
 
-const memory = await import('../tools/lib/memory.mjs')
-const qqMemory = await import('../tools/lib/qq-memory.mjs')
-const persona = await import('../tools/lib/persona.mjs')
+const memory = await import('../tools/lib/mind/memory.mjs')
+const qqMemory = await import('../tools/lib/qq/qq-memory.mjs')
+const persona = await import('../tools/lib/self/persona.mjs')
 
 // ⚠️ 2026-11-02：数据目录改名 .bot-ai → .data。
 //    这里原来写死 `path.join(tmp, '.bot-ai')` —— 测试自己造路径，
@@ -33,7 +33,7 @@ const persona = await import('../tools/lib/persona.mjs')
 //    但**不能简单换成 '.data'** —— 那样下次再改名它还会挂。
 //    正确做法：问代码"你用的是哪个目录"。测试断言的是**行为**，
 //    不该复制一份路径常量（那是第二份真相）。
-const { dataDir } = await import('../tools/lib/paths.mjs')
+const { dataDir } = await import('../tools/lib/infra/paths.mjs')
 const QQ_EP = path.join(dataDir, 'qq', 'episodes.jsonl')
 const WX_EP = path.join(dataDir, 'wechat', 'episodes.jsonl')
 const MAIN_EP = path.join(dataDir, 'episodes.jsonl')

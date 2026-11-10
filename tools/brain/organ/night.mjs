@@ -42,14 +42,14 @@
 //
 // 而睡完一觉之后：记忆被巩固了、事件被摄入了、代码被归档了 → 睡意归零。
 // **睡意不是一个会自然衰减的量，它是一个账。** 这个区别是第一版最根本的错。
-import { swallow } from '../../lib/swallow.mjs'
+import { swallow } from '../../lib/infra/swallow.mjs'
 import * as rhythm from '../rhythm.mjs'
 import * as stage from './sleepstage.mjs'
 import * as field from '../field.mjs'
 import * as hpa from './hpa.mjs'
 import { readJson, writeJsonAtomic } from '../json.mjs'
 import { nightWorkPath, sleepPath } from '../paths.mjs'
-import { dataPath } from '../../lib/paths.mjs'
+import { dataPath } from '../../lib/infra/paths.mjs'
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v))
 const MIN = 60_000

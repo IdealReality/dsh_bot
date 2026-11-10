@@ -25,8 +25,8 @@
 //    2026-11-02 的 mood/affect 双源冲突就是这么来的（system 里两行情绪互相矛盾）。
 //    需要影响场的时候，由调用方显式挑一个维度 poke 一次，且带 why。
 import { readJson, mutateJson } from '../json.mjs'
-import { dataPath } from '../../lib/paths.mjs'
-import { swallow } from '../../lib/swallow.mjs'
+import { dataPath } from '../../lib/infra/paths.mjs'
+import { swallow } from '../../lib/infra/swallow.mjs'
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v))
 

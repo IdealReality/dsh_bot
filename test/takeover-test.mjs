@@ -26,7 +26,7 @@ const ok = (name, pass, detail = '') => {
 }
 
 const A = await import('../lib/agent-prompt.mjs')
-const { configPath } = await import('../tools/lib/paths.mjs')
+const { configPath } = await import('../tools/lib/infra/paths.mjs')
 
 // ── ① 段描述 ───────────────────────────────────────────────────────────────
 {

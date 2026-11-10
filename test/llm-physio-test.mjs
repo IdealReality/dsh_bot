@@ -26,7 +26,7 @@ const ok = (name, pass, detail = '') => {
 }
 
 // env 就位后才能 import（paths.mjs 缓存 HOME）
-const { dailyTokens, note } = await import(pathToFileURL(path.join(APP, 'tools/lib/llm-physio.mjs')).href)
+const { dailyTokens, note } = await import(pathToFileURL(path.join(APP, 'tools/lib/work/llm-physio.mjs')).href)
 const TODAY = new Date().toLocaleDateString('sv-SE')
 const dataDir = tmp
 

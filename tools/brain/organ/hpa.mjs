@@ -39,8 +39,8 @@
 import { readJson, mutateJson } from '../json.mjs'
 import { hpaPath } from '../paths.mjs'
 import * as field from '../field.mjs'
-import { swallow } from '../../lib/swallow.mjs'
-import * as bond from '../../lib/bond.mjs'
+import { swallow } from '../../lib/infra/swallow.mjs'
+import * as bond from '../../lib/mind/bond.mjs'
 
 const MIN = 60_000
 const HOUR = 3_600_000

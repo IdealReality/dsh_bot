@@ -32,7 +32,7 @@ const ok = (name, pass, detail = '') => {
   console.log(`${pass ? '  ✓' : '  ✗'} ${name}${detail ? ' —— ' + detail : ''}`)
 }
 
-const { recordDirectUsage, readDirectUsage } = await import(pathToFileURL(path.join(APP, 'tools/lib/llm.mjs')).href)
+const { recordDirectUsage, readDirectUsage } = await import(pathToFileURL(path.join(APP, 'tools/lib/work/llm.mjs')).href)
 const LEDGER = path.join(tmp, 'llm-usage.jsonl')
 const rows = () => fs.readFileSync(LEDGER, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l))
 

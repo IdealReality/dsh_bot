@@ -23,7 +23,7 @@
 
 import { readJson, mutateJson } from './json.mjs'
 import { rhythmPath } from './paths.mjs'
-import { config } from '../lib/config.mjs'
+import { config } from '../lib/infra/config.mjs'
 import fs from 'node:fs'
 import path from 'node:path'
 import { epDir } from './paths.mjs'

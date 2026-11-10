@@ -1,9 +1,9 @@
 // bili-del —— 删除她自己的投稿（B站稿件）。归属：糖鲸理想的机械人的号，她管自己的稿。
 // 用法：node bot.mjs bili-del <BV号或aid> [--go]（默认干跑，--go 真删）
-import { loadCred } from '../lib/cred.mjs'
-import { makeHeaders } from '../lib/bili-api.mjs'
-import * as W from '../lib/bili-write.mjs'
-import { swallow } from '../lib/swallow.mjs'
+import { loadCred } from '../lib/infra/cred.mjs'
+import { makeHeaders } from '../lib/bili/bili-api.mjs'
+import * as W from '../lib/bili/bili-write.mjs'
+import { swallow } from '../lib/infra/swallow.mjs'
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36'
 
@@ -36,7 +36,7 @@ export async function run(argv) {
   if (j?.code === 0) {
     console.log('✓ 已删除 aid=' + aid)
     try {
-      const { default: memory } = await import('../lib/memory.mjs')
+      const { default: memory } = await import('../lib/mind/memory.mjs')
       memory.remember('bilibili', 'bilibili:self', '40048138', 'assistant', `删除了稿件 aid=${aid}（笨蛋管理员手动执行的验证）`, { kind: 'post' })
     } catch (e) { swallow(e, 'bili-del:run') }
   }

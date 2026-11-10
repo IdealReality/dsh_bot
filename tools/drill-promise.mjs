@@ -2,9 +2,9 @@
 //
 //   node tools/drill-promise.mjs            # 全流程
 //   node tools/drill-promise.mjs --plan     # 只落账，不执行（给她自己第二天跑）
-import * as promises from './lib/promises.mjs'
-import * as ownerFacts from './lib/owner-facts.mjs'
-import * as memory from './lib/memory.mjs'
+import * as promises from './lib/mind/promises.mjs'
+import * as ownerFacts from './lib/mind/owner-facts.mjs'
+import * as memory from './lib/mind/memory.mjs'
 
 const planOnly = process.argv.includes('--plan')
 

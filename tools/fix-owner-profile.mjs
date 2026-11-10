@@ -9,7 +9,7 @@
 //   node tools/fix-owner-profile.mjs [--go]
 import fs from 'node:fs'
 import path from 'node:path'
-import { homePath } from './lib/paths.mjs'
+import { homePath } from './lib/infra/paths.mjs'
 
 const GO = process.argv.includes('--go')
 const FILE = homePath('.bot-ai', 'qq', 'owner-profile.md')

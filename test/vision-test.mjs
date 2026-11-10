@@ -4,7 +4,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import assert from 'node:assert'
-import { visionOn, visionCfg, dataUri, describeFrames } from '../tools/lib/vision.mjs'
+import { visionOn, visionCfg, dataUri, describeFrames } from '../tools/lib/media/vision-api.mjs'
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'vision-test-'))
 try {

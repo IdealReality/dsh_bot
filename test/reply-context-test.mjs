@@ -4,7 +4,7 @@
 // 两个会话并发时，A 会话 await 之后读到的平台可能已经被 B 会话改掉，
 // 于是回复发错平台 / 发错人。AsyncLocalStorage 修好后，这里必须永远对。
 import assert from 'node:assert'
-import { runWithContext, current, currentPlatform, currentChat, withContext } from '../tools/lib/reply-context.mjs'
+import { runWithContext, current, currentPlatform, currentChat, withContext } from '../tools/lib/qq/reply-context.mjs'
 
 // ── 1. 没有上下文 ───────────────────────────────────────────────────────────
 assert.equal(current(), null)

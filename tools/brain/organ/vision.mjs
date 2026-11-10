@@ -27,11 +27,11 @@
 //   phrase(imp)        增量印象 → 一句**可测事实**（不含语义）
 //
 // 只记录、不决策：要不要说、要不要再看一遍，是行为层的事。
-import { dataPath } from '../../lib/paths.mjs'
+import { dataPath } from '../../lib/infra/paths.mjs'
 import { mutateJson } from '../json.mjs'
-import { swallow } from '../../lib/swallow.mjs'
-import * as watch from '../../lib/watch.mjs'
-import * as audition from '../../lib/audition.mjs'
+import { swallow } from '../../lib/infra/swallow.mjs'
+import * as watch from '../../lib/media/watch.mjs'
+import * as audition from '../../lib/media/audition.mjs'
 
 const VISION_PATH = () => dataPath('brain', 'meta', 'vision.json')
 const DAY = 86_400_000

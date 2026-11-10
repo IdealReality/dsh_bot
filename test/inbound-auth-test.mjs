@@ -7,7 +7,7 @@
 //   ② 配了 token → 必须带对 token（来源 IP 不再豁免）
 //   ③ token 比较是定长的（不泄漏前缀）
 import assert from 'node:assert'
-import { inboundToken, isLoopback, inboundTokenOk, requireInboundToken } from '../tools/lib/inbound-auth.mjs'
+import { inboundToken, isLoopback, inboundTokenOk, requireInboundToken } from '../tools/lib/qq/inbound-auth.mjs'
 
 const req = ({ ip = '10.1.2.3', host = 'example:8081', auth = '', token = '', url = '/' } = {}) => ({
   socket: { remoteAddress: ip },

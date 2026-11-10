@@ -4,29 +4,29 @@
 //   node bot.mjs produce --debut-posted [BV号]      # 首条发出去了，解锁
 //   node bot.mjs produce --debut                     # 看首条锁的状态
 //
-// 一条片子怎么来的（细节在 tools/lib/video.mjs 顶上）：
+// 一条片子怎么来的（细节在 tools/lib/media/video.mjs 顶上）：
 //   策划（她自己的兴趣/见闻 → 分镜+台词+她自己写的导演稿）→ 每幕生图 → 逐句 TTS 配音
 //   → **真动作镜头（10-27：万相 2.7 首帧驱动，模型音轨掐掉，失败自动落回静图运镜）**
 //   → 运镜镜头/真片段 → 幕间转场 → 逐句烧字幕 → 合成 BGM 侧链避让 → 片头/片尾卡 → 1080p 成片 + 封面
 //   `--no-video` = 这条强制走老路（静图+运镜），不花视频模型的钱。
 //
-// B站首条被用户锁死成「自我介绍 + 第一天来B站 + 账号归她运营 + 自由发挥」（tools/lib/debut.mjs），
+// B站首条被用户锁死成「自我介绍 + 第一天来B站 + 账号归她运营 + 自由发挥」（tools/lib/self/debut.mjs），
 // 发过之后自动解锁。发出去的点击永远归用户：这里只出投稿包。
 import fs from 'node:fs'
 import path from 'node:path'
 import { execFileSync } from 'node:child_process'
 
-import { config } from '../lib/config.mjs'
-import * as memory from '../lib/memory.mjs'
-import * as llm from '../lib/llm.mjs'
-import { synth } from '../lib/tts.mjs'
-import { concatWav } from '../lib/tts.mjs'
-import { scoreWavs } from '../lib/prosody.mjs'
-import { dataPath } from '../lib/paths.mjs'
-import * as debut from '../lib/debut.mjs'
-import * as V from '../lib/video.mjs'
-import * as W from '../lib/wanvid.mjs'
-import { swallow } from '../lib/swallow.mjs'
+import { config } from '../lib/infra/config.mjs'
+import * as memory from '../lib/mind/memory.mjs'
+import * as llm from '../lib/work/llm.mjs'
+import { synth } from '../lib/media/tts.mjs'
+import { concatWav } from '../lib/media/tts.mjs'
+import { scoreWavs } from '../lib/media/prosody.mjs'
+import { dataPath } from '../lib/infra/paths.mjs'
+import * as debut from '../lib/self/debut.mjs'
+import * as V from '../lib/media/video.mjs'
+import * as W from '../lib/media/wanvid.mjs'
+import { swallow } from '../lib/infra/swallow.mjs'
 
 const BRAND = '理想的机械人 · 一条住在用户电脑里的蓝鲸鱼娘'
 
@@ -326,7 +326,7 @@ export function extractJson(text) {
 }
 
 async function makePlan({ topic, platform, lockedDebut }) {
-  const { personaText } = await import('../lib/persona.mjs')
+  const { personaText } = await import('../lib/self/persona.mjs')
   const persona = personaText()
   const interests = memory.loreInterests(4)
   const recent = memory.recent('qq:web-roam-self', 3).map((m) => String(m.content).slice(0, 40))
@@ -387,7 +387,7 @@ async function makePlan({ topic, platform, lockedDebut }) {
 
 // ── 生图（每幕 1~2 帧：两帧才有"动"的感觉）───────────────────────────────────
 async function shootScene({ acting, out, seedNote }) {
-  const { editImage } = await import('../lib/imggen.mjs')
+  const { editImage } = await import('../lib/media/imggen.mjs')
   await editImage({ instruction: `演绎这一幕：${String(acting).slice(0, 90)}。${seedNote || ''}构图带一点剧情感`, out })
   return out
 }
@@ -563,7 +563,7 @@ export async function run(argv = []) {
     // 哪里断了得有人知道。exit(1) 保留：不带病成片。
     const detail = `成片只凑齐 ${scenes.length}/${plan.scenes.length} 幕 —— 配图/配音失败被逐幕跳过累积所致。投稿包目录：${dir}`
     try {
-      const { sendOwnerQQ } = await import('../lib/notify.mjs')
+      const { sendOwnerQQ } = await import('../lib/infra/notify.mjs')
       await sendOwnerQQ('做片子没做成：' + detail)
     } catch (e) { swallow(e, 'produce:missing-scenes') }
     console.error('✗ ' + detail)
@@ -689,18 +689,18 @@ export async function run(argv = []) {
             const { emit } = await import('../brain/event.mjs')
             emit({ proc: 'produce', platform: 'bilibili', chatId: 'bilibili:self', userId: '40048138', role: 'assistant',
               text: '投稿成功：' + meta.title + ' BV' + result.bvid, act: 'action' })
-            const mem2 = await import('../lib/memory.mjs')
+            const mem2 = await import('../lib/mind/memory.mjs')
             mem2.remember('bilibili', 'bilibili:self', '40048138', 'assistant',
               '投稿成功：' + meta.title + ' BV' + result.bvid, { kind: 'post' })
           } catch (e) { swallow(e, 'produce:best-effort') }
           try {
-            const { sendOwnerQQ } = await import('../lib/notify.mjs')
+            const { sendOwnerQQ } = await import('../lib/infra/notify.mjs')
             await sendOwnerQQ('投稿了！《' + meta.title + '》 https://www.bilibili.com/video/' + result.bvid)
           } catch (e) { swallow(e, 'produce:best-effort') }
         } else {
           console.log('投稿失败：' + result.why)
           try {
-            const { sendOwnerQQ } = await import('../lib/notify.mjs')
+            const { sendOwnerQQ } = await import('../lib/infra/notify.mjs')
             await sendOwnerQQ('投稿失败：' + meta.title + ' ' + (result.why || '').slice(0, 100) + ' 投稿包在 ' + dir)
           } catch (e) { swallow(e, 'produce:best-effort') }
         }

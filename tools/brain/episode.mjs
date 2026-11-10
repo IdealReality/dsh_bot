@@ -12,7 +12,7 @@ import { semDir } from './paths.mjs'
 import { isoOf, relTime } from './clock.mjs'
 import { consume as consumeEvents } from './event.mjs'
 import { bump } from './metrics.mjs'
-import { swallow } from '../lib/swallow.mjs'
+import { swallow } from '../lib/infra/swallow.mjs'
 
 const EP_RE = /^\d{4}-\d{2}\.jsonl$/
 

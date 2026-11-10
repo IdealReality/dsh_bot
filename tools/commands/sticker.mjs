@@ -1,4 +1,4 @@
-import { gatewayBase } from '../lib/qq-gateway.mjs'
+import { gatewayBase } from '../lib/qq/qq-gateway.mjs'
 // sticker —— 表情包工坊：AI 生成一张入库（Pollinations 免费无 key，走本机 Clash 代理）。
 // 生成完存进 ~/.data/stickers/<标签|自制>/，QQ/B站表情系统立刻能用它。
 //
@@ -6,9 +6,9 @@ import { gatewayBase } from '../lib/qq-gateway.mjs'
 //   · --tag  → 生成"标签"样式存进标签目录（图库增长，以后 [表情:标签] 直接用）
 //   · --send → 生成完顺手把图发给用户 QQ 看效果
 import fs from 'node:fs'
-import { generateStickerImage } from '../lib/imggen.mjs'
-import { config } from '../lib/config.mjs'
-import { pickSticker } from '../lib/stickers.mjs'
+import { generateStickerImage } from '../lib/media/imggen.mjs'
+import { config } from '../lib/infra/config.mjs'
+import { pickSticker } from '../lib/media/stickers.mjs'
 
 function arg(argv, name, d) { const i = argv.indexOf(name); return i >= 0 ? String(argv[i + 1] ?? d) : d }
 const has = (argv, name) => argv.includes(name)

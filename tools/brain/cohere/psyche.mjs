@@ -24,7 +24,7 @@
 //
 // 复核**不调 LLM**：它必须在回复主链路上以微秒级跑完，且行为稳定可测。
 // 严重问题由编排层触发一次重写（已有 group 重写同一套模式）。
-import { swallow } from '../../lib/swallow.mjs'
+import { swallow } from '../../lib/infra/swallow.mjs'
 import { baseScores } from '../learn/strategies.mjs'
 import { sameQuestion } from './thread.mjs'
 

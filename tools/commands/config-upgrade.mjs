@@ -12,8 +12,8 @@
 // 关键：**只做结构对齐，不改用户的取值**。已经存在的键一个字节都不动。
 import fs from 'node:fs'
 import path from 'node:path'
-import { DEFAULTS, configPath } from '../lib/config.mjs'
-import { RETIRED_PLATFORMS } from '../lib/platforms.mjs'
+import { DEFAULTS, configPath } from '../lib/infra/config.mjs'
+import { RETIRED_PLATFORMS } from '../lib/qq/platforms.mjs'
 
 const isObj = (v) => v && typeof v === 'object' && !Array.isArray(v)
 
@@ -92,7 +92,7 @@ export async function run(argv = []) {
   // "缺什么"只作为报告给你看，不写进文件。
   let pruned = []
   try {
-    const { stripDefaults } = await import('../lib/config-file.mjs')
+    const { stripDefaults } = await import('../lib/infra/config-file.mjs')
     const stripped = stripDefaults(user)
     // 统计被剔掉的顶层键（只报数量，不逐条刷屏）
     for (const k of Object.keys(user)) {

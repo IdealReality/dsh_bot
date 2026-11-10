@@ -4,7 +4,7 @@
 //   node bot.mjs promises --due        # 现在到点的
 //   node bot.mjs promises done p1abc "看完了第一集"
 //   node bot.mjs promises fail p1abc "这条没有字幕"
-import * as promises from '../lib/promises.mjs'
+import * as promises from '../lib/mind/promises.mjs'
 
 export function run(argv = []) {
   const sub = String(argv[0] || '')

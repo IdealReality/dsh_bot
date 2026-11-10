@@ -2,13 +2,13 @@
 // 权重思路来自 bili-whale：偏好命中 + 弹幕密度，**不看播放量**（冷门但对的也可以看）。
 //
 //   node bot.mjs feed [--n 5] [--json]
-import { apiGet, makeHeaders } from '../lib/bili-api.mjs'
-import { loadCred } from '../lib/cred.mjs'
-import { config } from '../lib/config.mjs'
-import { dataPath } from '../lib/paths.mjs'
+import { apiGet, makeHeaders } from '../lib/bili/bili-api.mjs'
+import { loadCred } from '../lib/infra/cred.mjs'
+import { config } from '../lib/infra/config.mjs'
+import { dataPath } from '../lib/infra/paths.mjs'
 import fs from 'node:fs'
-import * as memory from '../lib/memory.mjs'
-import { swallow } from '../lib/swallow.mjs'
+import * as memory from '../lib/mind/memory.mjs'
+import { swallow } from '../lib/infra/swallow.mjs'
 
 // 偏好词是"话题名"（美食 / 猫咪 / AI 与 Agent 工具），标题和简介里几乎不会原样出现。
 // 只做整串 includes = 永远漏（10-23、10-24 连续两天把"康师傅桶面""现钓渔获做餐"判成无命中）。

@@ -28,7 +28,7 @@ const ok = (name, pass, detail = '') => {
   console.log(`${pass ? '  ✓' : '  ✗'} ${name}${detail ? ' —— ' + detail : ''}`)
 }
 
-const WP = await import('../tools/lib/webpush.mjs')
+const WP = await import('../tools/lib/work/webpush.mjs')
 const CFG = JSON.parse(fs.readFileSync(process.env.BOT_CONFIG, 'utf8'))
 const NOW = Date.now()
 const wakeFile = path.join(TMP, 'webui-wake.json')
@@ -83,7 +83,7 @@ WP.markFired({ kind: m4.kind, motiveId: m4.motiveId, line: '心情' })
 
 // ④-3 watchlog 由头（黑盒：record 真造一条 —— 新鲜且没说过，压过一切兜底）
 resetQuota()
-const watchlog = await import('../tools/lib/watchlog.mjs')
+const watchlog = await import('../tools/lib/media/watchlog.mjs')
 watchlog.record({ show: '芙莉莲', title: '葬送的芙莉莲', ep: 6, plot: '一集魔法试炼', feel: '这集节奏好', ok: true, at: NOW })
 const m3 = WP.planProactive({ cfg: CFG, force: true })
 ok('watchlog 由头接上', m3.ok && String(m3.motiveId).startsWith('watch:'), m3.motiveId)

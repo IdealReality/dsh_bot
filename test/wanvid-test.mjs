@@ -74,8 +74,8 @@ fs.writeFileSync(path.join(SANDBOX, '.dsh', 'bot.config.json'), JSON.stringify({
   video: { animate: { enabled: true, resolution: '720P', pollSec: 1, maxWaitSec: 30, retries: 0, pricePerSecond: 0.5 } },
 }))
 
-const V = await import(url('tools/lib/video.mjs'))
-const W = await import(url('tools/lib/wanvid.mjs'))
+const V = await import(url('tools/lib/media/video.mjs'))
+const W = await import(url('tools/lib/media/wanvid.mjs'))
 
 const results = []
 async function ok(name, fn) {

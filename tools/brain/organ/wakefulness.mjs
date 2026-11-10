@@ -73,8 +73,8 @@
 //     （tick 返回 tidy:true），做不做、怎么做出编排层决定（body.mjs）。
 //     这是 2026-11-04 门禁抓到的「分层反向依赖」的同一条线。
 import { readJson, mutateJson } from '../json.mjs'
-import { dataPath } from '../../lib/paths.mjs'
-import { swallow } from '../../lib/swallow.mjs'
+import { dataPath } from '../../lib/infra/paths.mjs'
+import { swallow } from '../../lib/infra/swallow.mjs'
 import * as field from '../field.mjs'
 
 const MIN = 60_000

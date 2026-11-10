@@ -6,7 +6,7 @@
 import { readJson, mutateJson } from './json.mjs'
 import { attentionPath, genPath } from './paths.mjs'
 import { bump } from './metrics.mjs'
-import { swallow } from '../lib/swallow.mjs'
+import { swallow } from '../lib/infra/swallow.mjs'
 
 const empty = () => ({
   focus: null,                       // {chat, since, label}

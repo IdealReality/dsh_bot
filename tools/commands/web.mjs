@@ -8,13 +8,13 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
-import { config } from '../lib/config.mjs'
-import * as llm from '../lib/llm.mjs'
-import { sanitizeText } from '../lib/sanitize.mjs'
-import { searchEngines, scoreItem, RELEVANT } from '../lib/search-engines.mjs'
-import { dataPath, homePath, WORK_DIR } from '../lib/paths.mjs'
-import { acquire } from '../lib/lock.mjs'
-import { swallow } from '../lib/swallow.mjs'
+import { config } from '../lib/infra/config.mjs'
+import * as llm from '../lib/work/llm.mjs'
+import { sanitizeText } from '../lib/qq/sanitize.mjs'
+import { searchEngines, scoreItem, RELEVANT } from '../lib/bili/search-engines.mjs'
+import { dataPath, homePath, WORK_DIR } from '../lib/infra/paths.mjs'
+import { acquire } from '../lib/infra/lock.mjs'
+import { swallow } from '../lib/infra/swallow.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 
@@ -109,7 +109,7 @@ export async function searchSmart(kw) {
   // 只有"试过的引擎全挂"（网络/风控）时，真浏览器才可能不一样。
   if (!detail.tried.length || detail.errors.length < detail.tried.length) return results
   try {
-    const { browserRead, browserDetach, hasChromium } = await import('../lib/browser.mjs')
+    const { browserRead, browserDetach, hasChromium } = await import('../lib/media/browser-engine.mjs')
     if (!hasChromium()) return results   // 没有浏览器：上面 fetch 到多少就是多少，别去 spawn
     const p = await browserRead(`https://www.so.com/s?q=${encodeURIComponent(kw)}`, { waitMs: 6000, maxChars: 3000, links: true })
     const cand = []
@@ -125,7 +125,7 @@ export async function searchSmart(kw) {
       logWeb('搜索', `「${kw}」→ ${cand.length} 条（内置浏览器 SERP）`)
     }
   } catch (e) { swallow(e, 'web:searchBrowser') } finally {
-    try { const m2 = await import('../lib/browser.mjs'); await m2.browserDetach() } catch (e2) { swallow(e2, 'web:searchDetach') }
+    try { const m2 = await import('../lib/media/browser-engine.mjs'); await m2.browserDetach() } catch (e2) { swallow(e2, 'web:searchDetach') }
   }
   return results
 }
@@ -225,8 +225,8 @@ async function roamLoop() {
     round++
     try {
       // 素材：她是谁、最近见闻、兴趣、上一轮干了什么（从日志尾捞）
-      const { buildMessages } = await import('../lib/persona.mjs')
-      const { loreInterests, recent } = await import('../lib/memory.mjs')
+      const { buildMessages } = await import('../lib/self/persona.mjs')
+      const { loreInterests, recent } = await import('../lib/mind/memory.mjs')
       let lastDo = ''
       try {
         const logTail = fs.readFileSync(LOG(), 'utf8').split('\n').filter(Boolean).slice(-3).join(' / ')
@@ -260,7 +260,7 @@ async function roamLoop() {
         const rs = await searchSmart(String(plan.query).trim())   // searchWeb 内部已记日志
         for (const r of rs.slice(0, 5)) console.log('  ·', r.title, '—', r.url)
         lastResults = rs
-        try { const { remember } = await import('../lib/memory.mjs'); remember('web', 'web:roam', cfg.identity?.name ?? 'dsh_bot', 'assistant', `（搜索了「${String(plan.query).slice(0, 40)}」，首选：${rs[0]?.title || ''}）`) } catch (e) { swallow(e, 'web:sleep') }      } else if (act === '读网页' && String(plan.url || '').trim()) {
+        try { const { remember } = await import('../lib/mind/memory.mjs'); remember('web', 'web:roam', cfg.identity?.name ?? 'dsh_bot', 'assistant', `（搜索了「${String(plan.query).slice(0, 40)}」，首选：${rs[0]?.title || ''}）`) } catch (e) { swallow(e, 'web:sleep') }      } else if (act === '读网页' && String(plan.url || '').trim()) {
         const url = String(plan.url).trim()
         let text = ''
         try {
@@ -271,7 +271,7 @@ async function roamLoop() {
           logWeb('读不到', url.slice(0, 70))
           lastResults = lastResults.filter((r) => r.url !== url)
           try {
-            const { remember } = await import('../lib/memory.mjs')
+            const { remember } = await import('../lib/mind/memory.mjs')
             remember('web', 'web:roam', cfg.identity?.name ?? 'dsh_bot', 'assistant', `（这一页读不到正文，别再读它了：${url.slice(0, 60)}）`)
           } catch (e) { swallow(e, 'web:sleep') }
         }
@@ -279,7 +279,7 @@ async function roamLoop() {
           console.log('  正文前 200 字：' + text.slice(0, 200).replace(/\n/g, ' '))
           // 读完顺手沉淀
           try {
-            const { remember } = await import('../lib/memory.mjs')
+            const { remember } = await import('../lib/mind/memory.mjs')
             remember('web', 'web:roam', cfg.identity?.name ?? 'dsh_bot', 'assistant', `（读了 ${url}：${text.slice(0, 80)}）`)
           } catch (e) { swallow(e, 'web:sleep') }
         }
@@ -290,17 +290,17 @@ async function roamLoop() {
         fs.appendFileSync(file, `\n## ${new Date().toTimeString().slice(0, 5)} ${String(plan.topic || '').slice(0, 30)}\n\n${String(plan.text).slice(0, 800)}\n`)
         console.log('  ✓ 存入', file)
         logWeb('写小说', String(plan.topic || '').slice(0, 40))
-        try { const { remember } = await import('../lib/memory.mjs'); remember('web', 'web:roam', cfg.identity?.name ?? 'dsh_bot', 'assistant', `（写了小说片段：${String(plan.topic || '').slice(0, 30)}——${String(plan.text).slice(0, 60)}）`) } catch (e) { swallow(e, 'web:sleep') }
+        try { const { remember } = await import('../lib/mind/memory.mjs'); remember('web', 'web:roam', cfg.identity?.name ?? 'dsh_bot', 'assistant', `（写了小说片段：${String(plan.topic || '').slice(0, 30)}——${String(plan.text).slice(0, 60)}）`) } catch (e) { swallow(e, 'web:sleep') }
       } else if ((act === '学习' || act === '自我升级') && String(plan.text || '').trim()) {
         if (act === '自我升级') {
           if (cfg.web?.selfUpgrade?.enabled !== true) { console.log('  （自我升级未开启，这轮跳过）'); await sleep(60000); continue }
           doBackup()
           console.log('  🔒 已自动备份，升级内容：' + String(plan.text).slice(0, 100))
           logWeb('自我升级', String(plan.text).slice(0, 120))
-          try { const { remember } = await import('../lib/memory.mjs'); remember('web', 'web:roam', cfg.identity?.name ?? 'dsh_bot', 'assistant', `（自我升级：${String(plan.text).slice(0, 80)}）`) } catch (e) { swallow(e, 'web:best-effort') }
+          try { const { remember } = await import('../lib/mind/memory.mjs'); remember('web', 'web:roam', cfg.identity?.name ?? 'dsh_bot', 'assistant', `（自我升级：${String(plan.text).slice(0, 80)}）`) } catch (e) { swallow(e, 'web:best-effort') }
           // 她在 DSH 会话里才能真正改文件 —— 这里的角色是"记账+备份"，实际修改由她会话执行
         } else {
-          const { addLore } = await import('../lib/memory.mjs')
+          const { addLore } = await import('../lib/mind/memory.mjs')
           addLore('学习', `${String(plan.topic || plan.why || '').slice(0, 40)}：${String(plan.text).slice(0, 120)}`)
           console.log('  ✓ 已入库记忆')
           logWeb('学习', String(plan.text).slice(0, 120))
@@ -324,11 +324,11 @@ function doBackup() {
   try { execFileSync(process.execPath, [path.join(HERE, 'selfup.mjs'), 'backup'], { encoding: 'utf8', timeout: 120000, windowsHide: true }) } catch (e) { swallow(e, 'web:doBackup') }
 }
 
-/** 浏览器优先的读页：JS 渲染页走内置 chromium（tools/lib/browser.mjs），
+/** 浏览器优先的读页：JS 渲染页走内置 chromium（tools/lib/media/browser-engine.mjs），
  *  起不来/读不到再落回 curl 扒静态 —— 永远不比以前差。 */
 export async function browseSmart(url, { device = 'auto', waitMs = 9000, maxChars = 8000, links = false } = {}) {
   try {
-    const { browserRead, hasChromium } = await import('../lib/browser.mjs')
+    const { browserRead, hasChromium } = await import('../lib/media/browser-engine.mjs')
     if (!hasChromium()) throw new Error('no-chromium')   // 直接落回 fetch，不白起进程
     const p = await browserRead(url, { device, waitMs, maxChars, links })
     logWeb('浏览', `${url}（${p.device === 'pc' ? '电脑' : '手机'}·内置浏览器）`)
@@ -338,7 +338,7 @@ export async function browseSmart(url, { device = 'auto', waitMs = 9000, maxChar
     swallow(e, 'web:browseSmart')
     return await fetchWeb(url)   // fetch 兜底（空壳页会在 shellPageReason 抛提示）
   } finally {
-    try { const m = await import('../lib/browser.mjs'); await m.browserDetach() } catch (e) { swallow(e, 'web:browseDetach') }
+    try { const m = await import('../lib/media/browser-engine.mjs'); await m.browserDetach() } catch (e) { swallow(e, 'web:browseDetach') }
   }
 }
 

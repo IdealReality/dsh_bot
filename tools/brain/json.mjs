@@ -19,7 +19,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
-import { swallow } from '../lib/swallow.mjs'
+import { swallow } from '../lib/infra/swallow.mjs'
 
 /** 确保目录存在（幂等）。 */
 export function ensureDir(dir) {
@@ -84,7 +84,7 @@ export function readJsonl(file, { limit = 0 } = {}) {
 }
 
 // ── 同目录文件锁（mutateJson 专用，自包含不引 lock.mjs）──────────────────
-// 为什么不放 tools/lib/lock.mjs：那边锁名挂在 dataPath('locks')，而这里要锁的文件
+// 为什么不放 tools/lib/infra/lock.mjs：那边锁名挂在 dataPath('locks')，而这里要锁的文件
 // 可能是测试沙箱里的任意路径。同目录锁与文件同生共死，测试隔离天然生效。
 const LOCK_WAIT_MS = 5000
 

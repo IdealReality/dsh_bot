@@ -14,9 +14,9 @@ process.env.DSH_HOME = path.join(TMP_HOME, '.dsh')
 fs.mkdirSync(process.env.BOT_DATA_DIR, { recursive: true })
 fs.mkdirSync(process.env.DSH_HOME, { recursive: true })
 
-const { dataPath } = await import('../tools/lib/paths.mjs')
-const novelty = await import('../tools/lib/novelty.mjs')
-const memory = await import('../tools/lib/memory.mjs')
+const { dataPath } = await import('../tools/lib/infra/paths.mjs')
+const novelty = await import('../tools/lib/mind/novelty.mjs')
+const memory = await import('../tools/lib/mind/memory.mjs')
 
 let pass = 0, fail = 0
 const ok = (name, cond, extra = '') => {

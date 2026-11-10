@@ -1,12 +1,12 @@
-import { gatewayBase } from '../lib/qq-gateway.mjs'
+import { gatewayBase } from '../lib/qq/qq-gateway.mjs'
 // qzone —— 发 QQ 空间说说（SnowLuma 扩展 API send_qzone_msg）。
 // 不是标准 OneBot v11，是 SnowLuma 扩展；部分版本未暴露（调用会失败，看错误）。
 //
 //   node bot.mjs qzone --content "今天吃了三碗白饭…吧" [--image URL] [--permission 1]
 //     permission: 1=所有人可见(默认) 4=好友可见 64=仅自己
-import { config } from '../lib/config.mjs'
-import { swallow } from '../lib/swallow.mjs'
-import { sanitizeText } from '../lib/sanitize.mjs'
+import { config } from '../lib/infra/config.mjs'
+import { swallow } from '../lib/infra/swallow.mjs'
+import { sanitizeText } from '../lib/qq/sanitize.mjs'
 
 function arg(argv, name) {
   const i = argv.indexOf(name)

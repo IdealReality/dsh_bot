@@ -3,7 +3,7 @@
 //
 //   node bot.mjs vision --image <图片路径> [--query "图里有什么"]
 import path from 'node:path'
-import { visionOn, visionCfg, describeFrames } from '../lib/vision.mjs'
+import { visionOn, visionCfg, describeFrames } from '../lib/media/vision-api.mjs'
 
 function arg(argv, name, d) { const i = argv.indexOf(name); return i >= 0 ? String(argv[i + 1] ?? d) : d }
 

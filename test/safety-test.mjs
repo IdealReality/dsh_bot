@@ -20,7 +20,7 @@ fs.mkdirSync(path.join(TMP, '.dsh'), { recursive: true })
 fs.writeFileSync(path.join(TMP, '.dsh', 'bot.config.json'), JSON.stringify({ owner: { qq: '10000' } }))
 
 const { epFile, hpaPath } = await import('../tools/brain/paths.mjs')
-const bond = await import('../tools/lib/bond.mjs')
+const bond = await import('../tools/lib/mind/bond.mjs')
 const hpa = await import('../tools/brain/organ/hpa.mjs')
 
 const NOW = Date.now()

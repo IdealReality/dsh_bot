@@ -4,7 +4,7 @@
 // 她眼前写"南京菜单已经定稿三天" —— 等于每天提醒她"我在研究南京"。
 // 保留教训、去掉地名，让她记住"什么时候该收手"，而不是记住"南京"。
 import fs from 'node:fs'
-import { dataPath } from './lib/paths.mjs'
+import { dataPath } from './lib/infra/paths.mjs'
 
 const GO = process.argv.includes('--go')
 const FILE = dataPath('lore.json')

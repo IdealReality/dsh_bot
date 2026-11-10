@@ -11,11 +11,11 @@
 //   node bot.mjs focus rest     --min 40 --note "吃饱了犯困"   # 歇着也是正经事
 //   node bot.mjs focus off                          # 收工，回到没安排的自由时间
 import fs from 'node:fs'
-import { configPath } from '../lib/config.mjs'
+import { configPath } from '../lib/infra/config.mjs'
 import {
   FOCUS_PATH, LOOP_ACTIVITIES, focusSnapshot, isLoopActivity,
   labelOf, normActivity, readFocus, syncSwitches, writeFocus,
-} from '../lib/focus.mjs'
+} from '../lib/mind/focus.mjs'
 
 const arg = (argv, name) => {
   const i = argv.indexOf(name)

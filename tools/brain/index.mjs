@@ -1,8 +1,8 @@
 // brain/index —— 脑的对外门面：IO 进程只跟这里打交道（v3 §2/§6）。
 //
 // 约定：**任何导出的函数都不抛**。脑是旁路，宁可这一轮没记住，也不许把聊天带崩。
-import { config } from '../lib/config.mjs'
-import { extract as extractOwnerFacts } from '../lib/owner-facts.mjs'
+import { config } from '../lib/infra/config.mjs'
+import { extract as extractOwnerFacts } from '../lib/mind/owner-facts.mjs'
 import * as event from './event.mjs'
 import * as episode from './episode.mjs'
 import * as working from './working.mjs'
@@ -35,7 +35,7 @@ import * as night from './organ/night.mjs'
 // 2026-11-02：记忆层 —— 段（一件事）+ 锚（她自己的原话）
 import * as segment from './segment.mjs'
 import * as anchor from './anchor.mjs'
-import { swallow } from '../lib/swallow.mjs'
+import { swallow } from '../lib/infra/swallow.mjs'
 
 export { event, episode, working, attention, intents, facts, affect, delivery, claim, assembleMod as assemble, consolidate, doctor, metrics, recall, selfM, schema, competence, taskqueue, backfill, field, rhythm, inner, hpa, thalamus, sleepstage, night, segment, anchor }
 

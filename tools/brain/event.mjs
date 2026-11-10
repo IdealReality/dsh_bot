@@ -12,7 +12,7 @@ import { inboxFile, inboxCursor, inboxDir } from './paths.mjs'
 import { isoOf } from './clock.mjs'
 import { bump } from './metrics.mjs'
 import { spend as energySpend } from './organ/metabolism.mjs'
-import { swallow } from '../lib/swallow.mjs'
+import { swallow } from '../lib/infra/swallow.mjs'
 
 export const ACTS = ['say', 'action', 'observe', 'promise', 'feel', 'push']
 export const SCOPES = ['private', 'group', 'public']

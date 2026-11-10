@@ -3,7 +3,7 @@
 // 一个原则：**旧文件一个都不动**（episodes.jsonl / facts.json / lore.json / promises.json
 // 一律只读冻结），新结构在 brain/ 下并行长；迁移靠脚本单向搬运，随时能对着旧文件核对。
 import path from 'node:path'
-import { dataPath } from '../lib/paths.mjs'
+import { dataPath } from '../lib/infra/paths.mjs'
 
 /** 脑根目录：~/.data/brain */
 export const BRAIN = () => dataPath('brain')

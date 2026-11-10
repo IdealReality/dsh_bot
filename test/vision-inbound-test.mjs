@@ -20,10 +20,10 @@ process.env.HOME = SANDBOX
 process.on('exit', () => { try { fs.rmSync(SANDBOX, { recursive: true, force: true }) } catch { /* best-effort */ } })
 
 const ROOT = path.resolve(import.meta.dirname, '..')
-const { foldSystemIntoUser } = await import('file:///' + path.join(ROOT, 'tools/lib/llm.mjs').replace(/\\/g, '/'))
-const { prepareInbound, attachVision } = await import('file:///' + path.join(ROOT, 'tools/lib/qq-inbound.mjs').replace(/\\/g, '/'))
-const { dataUri } = await import('file:///' + path.join(ROOT, 'tools/lib/vision.mjs').replace(/\\/g, '/'))
-const { sampleVideo } = await import('file:///' + path.join(ROOT, 'tools/lib/videoframe.mjs').replace(/\\/g, '/'))
+const { foldSystemIntoUser } = await import('file:///' + path.join(ROOT, 'tools/lib/work/llm.mjs').replace(/\\/g, '/'))
+const { prepareInbound, attachVision } = await import('file:///' + path.join(ROOT, 'tools/lib/qq/qq-inbound.mjs').replace(/\\/g, '/'))
+const { dataUri } = await import('file:///' + path.join(ROOT, 'tools/lib/media/vision-api.mjs').replace(/\\/g, '/'))
+const { sampleVideo } = await import('file:///' + path.join(ROOT, 'tools/lib/media/videoframe.mjs').replace(/\\/g, '/'))
 
 const results = []
 async function ok(name, fn) {
@@ -145,7 +145,7 @@ try {
 
 // ── ④ content 是数组时，任何"补一句话"的地方都不许把它拍平 ────────────────
 await ok('msg-content：textOf 只取 text 段，appendText 保图段', async () => {
-  const { textOf, appendText } = await import('file:///' + path.join(ROOT, 'tools/lib/msg-content.mjs').replace(/\\/g, '/'))
+  const { textOf, appendText } = await import('file:///' + path.join(ROOT, 'tools/lib/qq/msg-content.mjs').replace(/\\/g, '/'))
   assert.equal(textOf('abc'), 'abc')
   assert.equal(textOf([{ type: 'text', text: 'ab' }, IMG]), 'ab')
   const m = appendText({ role: 'user', content: [{ type: 'text', text: '看这个' }, IMG] }, '\n补充')
@@ -159,7 +159,7 @@ await ok('msg-content：textOf 只取 text 段，appendText 保图段', async ()
 })
 
 await ok('think.speak：念头进 text 段，视频帧仍在（否则她照着标记编）', async () => {
-  const { speak } = await import('file:///' + path.join(ROOT, 'tools/lib/think.mjs').replace(/\\/g, '/'))
+  const { speak } = await import('file:///' + path.join(ROOT, 'tools/lib/mind/think.mjs').replace(/\\/g, '/'))
   const msgs = [{ role: 'user', content: [{ type: 'text', text: '你看这个' }, IMG] }]
   let captured = null
   await speak(msgs, '这画面有点眼熟', { llm: { chat: async (m) => { captured = m; return '好' } } })
@@ -173,7 +173,7 @@ await ok('think.speak：念头进 text 段，视频帧仍在（否则她照着�
 })
 
 await ok('cohere-bridge.rewriteMessages：提示补充后图段仍在', async () => {
-  const { rewriteMessages } = await import('file:///' + path.join(ROOT, 'tools/lib/cohere-bridge.mjs').replace(/\\/g, '/'))
+  const { rewriteMessages } = await import('file:///' + path.join(ROOT, 'tools/lib/mind/cohere-bridge.mjs').replace(/\\/g, '/'))
   const out = rewriteMessages([{ role: 'user', content: [{ type: 'text', text: '看' }, IMG] }], '【重写】重说一遍')
   const c = out[out.length - 1].content
   assert.ok(Array.isArray(c))

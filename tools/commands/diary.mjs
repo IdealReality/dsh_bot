@@ -5,7 +5,7 @@
 //   node bot.mjs diary --book owner  --show [--tail 20]
 //   node bot.mjs diary --path
 import fs from 'node:fs'
-import { diaryPath, WORK_DIR } from '../lib/paths.mjs'
+import { diaryPath, WORK_DIR } from '../lib/infra/paths.mjs'
 
 function arg(argv, name) {
   const i = argv.indexOf(name)

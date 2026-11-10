@@ -12,7 +12,7 @@ import { spawn } from 'node:child_process'
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'bot-sq-'))
 process.env.BOT_DATA_DIR = TMP
 
-const SQ = await import('../tools/lib/share-queue.mjs')
+const SQ = await import('../tools/lib/work/share-queue.mjs')
 
 // ── 1. 基本入队/读取 ───────────────────────────────────────────────────────
 SQ.enqueue({ kind: 'test', title: '第一条', text: 'hello' })
@@ -27,7 +27,7 @@ assert.ok(a1[0].id, '每条必须有 id（合并靠它去重）')
 // ── 2. 多进程并发入队：一条都不许丢 ───────────────────────────────────────
 fs.writeFileSync(QFILE, '[]')
 // v5：同样不能硬编码宿主机路径（容器里完全不同）
-const SQ_URL = new URL('../tools/lib/share-queue.mjs', import.meta.url).href
+const SQ_URL = new URL('../tools/lib/work/share-queue.mjs', import.meta.url).href
 const worker = `
 process.env.BOT_DATA_DIR = ${JSON.stringify(TMP)}
 const { enqueue } = await import(${JSON.stringify(SQ_URL)})

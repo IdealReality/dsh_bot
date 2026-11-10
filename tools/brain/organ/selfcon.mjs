@@ -19,9 +19,9 @@
 //   长不出来 = 电路板, 打回。selfcon-engine-test 的第一测就是这条。
 import fs from 'node:fs'
 import path from 'node:path'
-import { dataPath } from '../../lib/paths.mjs'
+import { dataPath } from '../../lib/infra/paths.mjs'
 import { readJson, writeJsonAtomic, appendJsonl, mutateJson, readJsonl } from '../json.mjs'
-import { swallow } from '../../lib/swallow.mjs'
+import { swallow } from '../../lib/infra/swallow.mjs'
 
 export const SELFCON_VERSION = 1
 

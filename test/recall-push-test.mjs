@@ -17,7 +17,7 @@ process.env.HOME = TMP_HOME
 delete process.env.DSH_HOME
 
 const REPO = path.dirname(new URL('.', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'))
-const memory = await import(pathToFileURL(path.join(REPO, 'tools', 'lib', 'memory.mjs')).href + '?t=' + Date.now())
+const memory = await import(pathToFileURL(path.join(REPO, 'tools', 'lib', 'mind', 'memory.mjs')).href + '?t=' + Date.now())
 
 let pass = 0, fail = 0
 const ok = (name, cond, extra = '') => {
@@ -60,8 +60,8 @@ const gotOther = memory.recent('qq:10004', 8)
 ok('不存在的会话不串数据', gotOther.length === 0, String(gotOther.length))
 
 // ⑤ 源码守卫：推送必须带 kind，recent 必须有过滤
-const memSrc = fs.readFileSync(path.join(REPO, 'tools', 'lib', 'memory.mjs'), 'utf8')
-const notifySrc = fs.readFileSync(path.join(REPO, 'tools', 'lib', 'notify.mjs'), 'utf8')
+const memSrc = fs.readFileSync(path.join(REPO, 'tools', 'lib', 'mind', 'memory.mjs'), 'utf8')
+const notifySrc = fs.readFileSync(path.join(REPO, 'tools', 'lib', 'infra', 'notify.mjs'), 'utf8')
 const qqSrc = fs.readFileSync(path.join(REPO, 'tools', 'commands', 'qq-server.mjs'), 'utf8')
 ok('notify 推送带 kind:push', notifySrc.includes("{ kind: 'push' }"))
 ok('主动搭话推送带 kind:push', qqSrc.includes("{ kind: 'push' }"))

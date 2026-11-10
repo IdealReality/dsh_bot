@@ -14,7 +14,7 @@ import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 const REPO = path.dirname(new URL('.', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'))
-const focusMod = await import(pathToFileURL(path.join(REPO, 'tools', 'lib', 'focus.mjs')).href)
+const focusMod = await import(pathToFileURL(path.join(REPO, 'tools', 'lib', 'mind', 'focus.mjs')).href)
 const { normActivity, isLoopActivity, syncSwitches, focusSnapshot, labelOf, writeFocus, readFocus, clearFocus, LOOP_ACTIVITIES } = focusMod
 
 let pass = 0, fail = 0

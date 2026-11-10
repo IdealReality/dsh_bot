@@ -11,7 +11,7 @@ import { intentsPath, journalPath } from './paths.mjs'
 import { isoOf, parseCue } from './clock.mjs'
 import { reward, tension } from './affect.mjs'
 import { bump } from './metrics.mjs'
-import { swallow } from '../lib/swallow.mjs'
+import { swallow } from '../lib/infra/swallow.mjs'
 
 export const KINDS = ['intent', 'wish', 'blocked']
 export const VERIFY_TYPES = ['delivery', 'file', 'ledger', 'api', 'human']

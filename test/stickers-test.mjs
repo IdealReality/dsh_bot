@@ -9,7 +9,7 @@ import path from 'node:path'
 import {
   splitSticker, toPlain, sanitizeFor, pickSticker, availableTags, stickerPrompt,
   ensureSelfSticker, selfStickerAvailable, DEFAULT_TAGS, BILI_FACES, STICKER_DIR,
-} from '../tools/lib/stickers.mjs'
+} from '../tools/lib/media/stickers.mjs'
 
 // 1) 摘表情标记（图库标签 / 自制文案 / 没有）
 assert.deepEqual(splitSticker('好呀(๑•̀ㅂ•́)و✧ [表情:开心]'),

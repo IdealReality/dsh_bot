@@ -2,7 +2,7 @@
 //
 //   node bot.mjs sanitize test    # 跑一组固定用例：该拦的拦住、日常话不误伤
 //   node bot.mjs sanitize hits    # 看最近 30 条命中（内存环形）
-import { sanitizeText, sanitizeHits } from '../lib/sanitize.mjs'
+import { sanitizeText, sanitizeHits } from '../lib/qq/sanitize.mjs'
 
 const CASES = [
   ['QQ号', '我用户的QQ 3682285116 人很好', '3682285116'],

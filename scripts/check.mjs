@@ -15,7 +15,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { closeIfHealed } from '../tools/lib/wound.mjs'
+import { closeIfHealed } from '../tools/lib/mind/wound.mjs'
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const FAST = process.argv.includes('--fast')
 const problems = []
@@ -175,7 +175,7 @@ function checkDataPathPrefix(files) {
 // 唯一例外：迁移/恢复脚本（它们的工作就是读旧目录）。
 const MIGRATION_ALLOW = [
   'scripts/check.mjs',              // 规则自身含有这些字面量
-  'tools/lib/paths.mjs',            // dataDir 回退链本身，必须能提旧目录
+  'tools/lib/infra/paths.mjs',            // dataDir 回退链本身，必须能提旧目录
   'tools/migrate-memory-10-27.mjs',
   'tools/restore-memory-10-27.mjs',
   'tools/drill-promise.mjs',
@@ -741,7 +741,7 @@ function checkBareJsonParse(files) {
 // ── 6.5 状态文件必须原子写（v5 深度排查 + 2026-11-02 升级） ──────────────────
 //
 // 老版本的做法：在源码行文本里找 MULTI_WRITER 列表里的**文件名字面量**。
-// 2026-11-02 审查发现它漏检了 tools/lib/proactive-gate.mjs：
+// 2026-11-02 审查发现它漏检了 tools/lib/work/proactive-gate.mjs：
 //
 //     const GATE = () => dataPath('qq-proactive-gate.json')   // 文件名在这
 //     fs.writeFileSync(f, JSON.stringify(o, null, 1))          // 裸写只写了变量 f
@@ -842,33 +842,36 @@ function checkAtomicWrites(files) {
 // 用 Tarjan 跑不出真环（2026-11-02 实测：SCC 全为单点），说明现在没有模块级循环；
 // 但"没有环"不等于"分层干净"，所以这条检查盯的是**方向**而不是环。
 const ALLOWED_REVERSE = [
-  'tools/lib/brain-bridge.mjs',      // remember 双写 brain（桥就是它的职责）
-  'tools/lib/dream-read.mjs',        // 读梦境 jsonl，只借 brain/json 的读取器
-  'tools/lib/notify.mjs',            // 通知发出后要写 delivery 账（交付证据）
-  'tools/lib/persona.mjs',           // 提示词装配要用脑的七路召回
-  'tools/lib/promise-executor.mjs',  // 承诺兑现要落 intents
-  'tools/lib/promises.mjs',          // 同上
-  'tools/lib/body.mjs',              // 身体：把心跳的决定接到能力上。它要看自我的心跳/睡眠/节律，
+  'tools/lib/work/office.mjs',        // 办公台要读写脑的 store（任务/会话状态）。
+                                     // 分层前是 tools/lib/office.mjs，依赖方向与 body/think 同类：
+                                     // 判断权在脑，执行接线在 lib。
+  'tools/lib/mind/brain-bridge.mjs',      // remember 双写 brain（桥就是它的职责）
+  'tools/lib/mind/dream-read.mjs',        // 读梦境 jsonl，只借 brain/json 的读取器
+  'tools/lib/infra/notify.mjs',            // 通知发出后要写 delivery 账（交付证据）
+  'tools/lib/self/persona.mjs',           // 提示词装配要用脑的七路召回
+  'tools/lib/mind/promise-executor.mjs',  // 承诺兑现要落 intents
+  'tools/lib/mind/promises.mjs',          // 同上
+  'tools/lib/mind/body.mjs',              // 身体：把心跳的决定接到能力上。它要看自我的心跳/睡眠/节律，
                                      // 才知道"此刻该做什么"—— 判断权在脑，执行接线在 lib，
                                      // 这个方向是刻意的（脑不该认识 socket，body 不该做决定）。
-  'tools/lib/think.mjs',             // 「先想后说」的执行体：要读身体状态（field）和心里的念头（inner）
+  'tools/lib/mind/think.mjs',             // 「先想后说」的执行体：要读身体状态（field）和心里的念头（inner）
                                      // 才能决定她此刻会怎么想。它是 lib 层里唯一必须看脑的地方 ——
                                      // 因为"怎么想"本身就是脑的职责，而它只是个执行器。
-  'tools/lib/reply-gate.mjs',        // 函数体内动态 import：判完接话时机顺手把情绪写进 affect，
+  'tools/lib/qq/reply-gate.mjs',        // 函数体内动态 import：判完接话时机顺手把情绪写进 affect，
                                      // 省掉「回复完再单独调一次判情绪」那次 LLM 往返
-  'tools/lib/bond.mjs',              // 关系器官的慢相结算要看她的睡眠节律（REM 门控）：
+  'tools/lib/mind/bond.mjs',              // 关系器官的慢相结算要看她的睡眠节律（REM 门控）：
                                      // "睡一觉就想通了"是字面机制。判断权（何时算睡）在脑，
                                      // 器官本身在 lib —— 与 body.mjs 同一个方向的先例。
-  'tools/lib/self-context.mjs',      // 自我语境合成（2026-11-07）：把账本（selfcon）与她真说过的句子（anchor）
+  'tools/lib/mind/self-context.mjs',      // 自我语境合成（2026-11-07）：把账本（selfcon）与她真说过的句子（anchor）
                                      // 合成一段 system。只读不写；合成发生在装配层，数据与判断在脑 ——
                                      // 与 persona.mjs 同形（装配要读脑的召回）。
-  'tools/lib/cohere-bridge.mjs',     // 连贯性器官的编排接线（2026-11-07）：器官在 brain/cohere，
+  'tools/lib/mind/cohere-bridge.mjs',     // 连贯性器官的编排接线（2026-11-07）：器官在 brain/cohere，
                                      // 桥在 lib —— 与 think.mjs 同形（"怎么想"归脑，执行接线归 lib）。
                                      // 它只做参数整理与错误隔离，不做任何业务判断。
-  'tools/lib/sensory-gain.mjs',      // 感觉增益（2026-11-07）：把器官读数（field 情绪场 / metabolism 能量）
+  'tools/lib/mind/sensory-gain.mjs',      // 感觉增益（2026-11-07）：把器官读数（field 情绪场 / metabolism 能量）
                                      // 翻译成视听采样参数（看几帧、看多密、听多久）。读数源在脑、
                                      // 翻译在 lib —— 与 body.mjs 同方向：判断在脑，执行接线在 lib。
-  'tools/lib/videoframe.mjs',        // 视频段的入口统一到视觉器官（2026-11-08）：器官在 brain/organ/vision，
+  'tools/lib/media/videoframe.mjs',        // 视频段的入口统一到视觉器官（2026-11-08）：器官在 brain/organ/vision，
                                      // 适配层在 lib —— 与 cohere-bridge / sensory-gain 同方向。
                                      // 它只把 QQ 消息段转成 {url}，记账（看了几次/几次没看成）与
                                      // 增量印象（解完一个窗口就交付）都由器官负责。
@@ -997,7 +1000,7 @@ function checkImportDirections(files) {
 // 允许出现旧名的只有两处兼容层；其他运行时代码再写 → 红。
 // 规则自身的匹配串用拼接构造，避免门禁把自己也报成违规。
 const LEGACY_GW_ALLOW = new Set([
-  'tools/lib/qq-gateway.mjs',    // 迁移表 + 读旧键
+  'tools/lib/qq/qq-gateway.mjs',    // 迁移表 + 读旧键
   'lib/legacy-qq-keys.mjs',      // 壳层读旧键（lib 不能 import tools）
 ])
 const LEGACY_GW_RE = new RegExp('nap' + 'cat', 'i')
@@ -1021,16 +1024,16 @@ function checkHardcodedPaths(files) {
   //          ② config().x || 'D:/…'（用户可覆盖的默认值）
   //          ③ 纯提示文案 / 外部程序安装路径候选
   const ALLOW = new Set([
-    'tools/lib/config.mjs',        // DEFAULTS（用户可覆盖）
+    'tools/lib/infra/config.mjs',        // DEFAULTS（用户可覆盖）
     'tools/commands/voice.mjs',    // RVC/SoVITS 安装路径提示
     'tools/commands/selftest.mjs', // 体检文案
-    'tools/lib/rvc.mjs',
-    'tools/lib/refclean.mjs',
-    'tools/lib/cover.mjs',         // 外部程序（ffmpeg/rvc）路径候选
-    'tools/lib/sing.mjs',
-    'tools/lib/bili-write.mjs',
+    'tools/lib/media/rvc.mjs',
+    'tools/lib/qq/refclean.mjs',
+    'tools/lib/media/cover.mjs',         // 外部程序（ffmpeg/rvc）路径候选
+    'tools/lib/media/sing.mjs',
+    'tools/lib/bili/bili-write.mjs',
     'tools/commands/qq-server.mjs',// snowluma_launcher 兜底 + curl.exe 探测
-    'tools/lib/ledger.mjs',
+    'tools/lib/work/ledger.mjs',
   ])
   const re = /['"\x60]([A-Za-z]:[\\/][^'"\x60\n]{3,})['"\x60]/g
   for (const f of files) {
@@ -1096,7 +1099,7 @@ const FUNC_ALLOW = {
   // 2026-11-07：连贯性器官接线（cohere 提示块 + cue 改 system + 历史清洗）后 656 行。
   // 额度按当前实际值登记，理由同前：拆它要把"记忆层/状态层/语气层/线索层"四段
   // 分别抽成独立函数，属独立一轮；先别让它挡住别的改动。
-  'tools/lib/persona.mjs:buildMessages': 680,
+  'tools/lib/self/persona.mjs:buildMessages': 680,
   // qq-server 的 run() 是主闭包 —— 它的长度 ≈ 文件长度，文件护栏已经覆盖。
   // 10-31 从 1600 调到 1700：为了治"一小时内连发 6 条主动消息"，在闭包里加了
   // 主动发言闸门（ownerSpoke / canSpeak / spokeDone 三个 helper 在模块级，
@@ -1162,19 +1165,19 @@ function checkOrganPhenomenonHeader(files) {
 // 规则二：bond.safety() 纯读纪律。C1 的正确性依赖它只读 —— 函数体里出现
 // 任何账本写调用（mutate/update/append/poke/setDim/drift/save）都是红灯。
 function checkSafetyPureRead(files) {
-  const f = files.find((x) => String(x).replaceAll('\\', '/').endsWith('tools/lib/bond.mjs'))
+  const f = files.find((x) => String(x).replaceAll('\\', '/').endsWith('tools/lib/mind/bond.mjs'))
   if (!f) return
   const src = stripComments(fs.readFileSync(f, 'utf8'))
   // 注意不能用 [^)]* 匹配参数：默认参数里有 Date.now()，内部的 ) 会截断匹配。
   const decl = src.indexOf('export function safety(')
-  if (decl < 0) { push('safety 纯读', 'tools/lib/bond.mjs', '找不到 safety() —— C1 社交安抚缓冲的纯读口丢了或改名了'); return }
+  if (decl < 0) { push('safety 纯读', 'tools/lib/mind/bond.mjs', '找不到 safety() —— C1 社交安抚缓冲的纯读口丢了或改名了'); return }
   const open = src.indexOf('{', decl)
-  if (open < 0) { push('safety 纯读', 'tools/lib/bond.mjs', 'safety() 声明异常：找不到函数体开括号'); return }
+  if (open < 0) { push('safety 纯读', 'tools/lib/mind/bond.mjs', 'safety() 声明异常：找不到函数体开括号'); return }
   let depth = 1, i = open + 1
   while (i < src.length && depth > 0) { const c = src[i]; if (c === '{') depth++; else if (c === '}') depth--; i++ }
   const body = src.slice(open + 1, i)
   const writer = /\b(mutateJson|updateJson|appendJsonl|poke|setDim|driftSet|save|mutatePerson)\s*\(/.exec(body)
-  if (writer) push('safety 纯读', 'tools/lib/bond.mjs', `safety() 函数体内出现写调用 ${writer[1]} —— 社交安抚缓冲必须保持纯读（hpa.stress 在热路径上读它，写账本会锁住级联）`)
+  if (writer) push('safety 纯读', 'tools/lib/mind/bond.mjs', `safety() 函数体内出现写调用 ${writer[1]} —— 社交安抚缓冲必须保持纯读（hpa.stress 在热路径上读它，写账本会锁住级联）`)
   else notes.push('C 系门禁：bond.safety() 纯读纪律核查通过')
 }
 
@@ -1412,16 +1415,16 @@ function checkFieldSenses(files) {
 // （局限：只抓字面路径拼接；动态拼路径的写入靠 code review —— 注释在这里说清楚。）
 function selfCoreFiles() {
   return [
-    'tools/lib/selfmod.mjs', 'tools/lib/selfmod-cmd.mjs', 'tools/lib/guard.mjs',
-    'tools/lib/inbound-auth.mjs', 'tools/lib/lock.mjs', 'scripts/check.mjs',
-    'tools/run-tests.mjs', 'tools/lib/wound.mjs', 'tools/commands/diagnose.mjs',
-    'tools/lib/brain-health.mjs',
+    'tools/lib/self/selfmod.mjs', 'tools/lib/self/selfmod-cmd.mjs', 'tools/lib/infra/guard.mjs',
+    'tools/lib/qq/inbound-auth.mjs', 'tools/lib/infra/lock.mjs', 'scripts/check.mjs',
+    'tools/run-tests.mjs', 'tools/lib/mind/wound.mjs', 'tools/commands/diagnose.mjs',
+    'tools/lib/mind/brain-health.mjs',
   ]
 }
 function checkSelfmodProtected(files) {
   for (const f of files) {
     const r = rel(f)
-    if (r === 'tools/lib/selfmod.mjs') continue
+    if (r === 'tools/lib/self/selfmod.mjs') continue
     let src2 = ''
     try { src2 = stripComments(fs.readFileSync(f, 'utf8')) } catch { continue }
     if (!/(writeFileSync|writeFile|appendFileSync)\s*\(/.test(src2)) continue

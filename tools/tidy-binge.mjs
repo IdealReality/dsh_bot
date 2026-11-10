@@ -1,7 +1,7 @@
 // 收拾 binge 台账：同一天同一集只留一条（演练时跑了四五遍，别让它算成"今天看了 5 集"）
 import fs from 'node:fs'
 import path from 'node:path'
-import { dataPath } from './lib/paths.mjs'
+import { dataPath } from './lib/infra/paths.mjs'
 
 const DIR = dataPath('binge')
 if (!fs.existsSync(DIR)) { console.log('（没有 binge 台账）'); process.exit(0) }

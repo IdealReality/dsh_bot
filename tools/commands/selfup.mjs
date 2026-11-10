@@ -7,9 +7,9 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
-import { config } from '../lib/config.mjs'
-import { dataPath, configPath } from '../lib/paths.mjs'
-import { swallow } from '../lib/swallow.mjs'
+import { config } from '../lib/infra/config.mjs'
+import { dataPath, configPath } from '../lib/infra/paths.mjs'
+import { swallow } from '../lib/infra/swallow.mjs'
 
 const BACKUP_ROOT = () => dataPath('selfup-backups')
 const LOG = () => dataPath('selfup-log.md')

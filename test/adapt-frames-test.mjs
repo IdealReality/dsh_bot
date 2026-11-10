@@ -8,7 +8,7 @@
 // （阈值 0.28 拍脑袋、骨架固定 3 个点导致 60 分钟片子漏掉前 14 分钟、
 //   去重漏了开头导致两个 0 秒……），而且错了都不会报错，只会"看起来正常"。
 import assert from 'node:assert'
-import * as AF from '../tools/lib/adapt-frames.mjs'
+import * as AF from '../tools/lib/media/adapt-frames.mjs'
 
 // ── 1. frameDistance 的基本性质 ────────────────────────────────────────────
 {

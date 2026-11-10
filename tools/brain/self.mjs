@@ -8,7 +8,7 @@ import path from 'node:path'
 import { readJson, mutateJson, shortHash, ensureDir } from './json.mjs'
 import { selfPath, selfMetaPath, selfHistoryDir } from './paths.mjs'
 import { isoOf } from './clock.mjs'
-import { swallow } from '../lib/swallow.mjs'
+import { swallow } from '../lib/infra/swallow.mjs'
 
 export const SECTIONS = ['owner', 'self', 'narrative']
 const MARK = (s) => [`<!-- ${s}:begin -->`, `<!-- ${s}:end -->`]

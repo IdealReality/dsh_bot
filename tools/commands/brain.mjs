@@ -18,8 +18,8 @@
 //   node tools/bot.mjs brain backfill [N]         # 把旧 episodes.jsonl 导进脑
 import fs from 'node:fs'
 import path from 'node:path'
-import { dataPath } from '../lib/paths.mjs'
-import { config } from '../lib/config.mjs'
+import { dataPath } from '../lib/infra/paths.mjs'
+import { config } from '../lib/infra/config.mjs'
 import * as brain from '../brain/index.mjs'
 import * as episode from '../brain/episode.mjs'
 import * as facts from '../brain/facts.mjs'
@@ -91,7 +91,7 @@ export async function run(argv = []) {
     const dryRun = has('--dry')
     let chatFn = null
     if (has('--llm')) {
-      const llm = await import('../lib/llm.mjs')
+      const llm = await import('../lib/work/llm.mjs')
       chatFn = (messages) => llm.chat(messages, { temperature: 0.3, max_tokens: 400, purpose: 'fast' })
     }
     const r = await brain.runConsolidation({ dryRun, chatFn })

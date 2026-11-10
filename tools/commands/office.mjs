@@ -3,7 +3,7 @@
 //   node bot.mjs office start --goal "统计我这周跟谁聊得最多，结果写成 md" [--steps 20] [--minutes 12]
 //   node bot.mjs office work --id of-xxx      （由 start 自动 spawn，一般不用手动）
 //   node bot.mjs office list | status [--id of-xxx] | report --id of-xxx | stop --id of-xxx
-import * as office from '../lib/office.mjs'
+import * as office from '../lib/work/office.mjs'
 
 function arg(argv, name) {
   const i = argv.indexOf(name)

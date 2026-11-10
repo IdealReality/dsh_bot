@@ -9,7 +9,7 @@
 import { readJson, mutateJson } from './json.mjs'
 import { factsPath, loreClassPath } from './paths.mjs'
 import { endOfDay, isoOf, stamp } from './clock.mjs'
-import { swallow } from '../lib/swallow.mjs'
+import { swallow } from '../lib/infra/swallow.mjs'
 
 /** 谓词闭集：合并键必须是有限集合，否则同义谓词永远合不到一起。 */
 export const PREDICATES = [

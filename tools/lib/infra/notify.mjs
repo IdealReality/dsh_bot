@@ -1,0 +1,102 @@
+import { gatewayBase } from '../qq/qq-gateway.mjs'
+// notify —— 主动发消息给用户（QQ，走 SnowLuma OneBot）。
+// 用途：抖音/B站看到有意思的视频，直接发一条 QQ 给用户，附链接 + 她自己的吐槽。
+// ⚠️ 发出去的话必须同步写进 QQ 对话记忆（10-24 实锤的脱节坑）：不记的话，
+// 鱼看自己的 QQ 聊天流不知道"我刚分享过"，用户问起就一脸懵。
+import fs from 'node:fs'
+import { config } from './config.mjs'
+import * as memory from '../mind/memory.mjs'
+import * as brainDelivery from '../../brain/delivery.mjs'
+import * as brainEvent from '../../brain/event.mjs'
+import { swallow } from './swallow.mjs'
+import { sanitizeText } from '../qq/sanitize.mjs'
+// 2026-11-04：这个 import 之前缺了 —— 下面跨窗口去重整段抛 ReferenceError，
+// 被内层 catch 全数吞掉，去重从未生效（同一条消息私聊+群聊会重复发两遍）。
+import { dataPath } from './paths.mjs'
+import { updateJson } from './atomic.mjs'
+
+/**
+ * 给用户发一条 QQ 私聊（成功后记进 QQ 记忆，对话流里她"记得自己说过"）。
+ * @returns {Promise<boolean>} 是否发送成功（失败不抛，静默返回 false，由调用方决定）
+ */
+export async function sendOwnerQQ(text) {
+  const cfg = config()
+  if (cfg.guard?.dryRun) { console.log('[notify] 干跑（guard.dryRun）：这条不真发 → ' + String(text || '').slice(0, 60)); return false }
+  const ownerQQ = String(cfg.owner?.qq || '').trim()
+  const snowluma = gatewayBase(cfg)
+  if (!ownerQQ) { console.log('[notify] owner.qq 未配置，跳过'); return false }
+  const content = sanitizeText('notify', String(text || '').slice(0, 500))   // 出站硬脱敏（2026-11-03）
+  const body = JSON.stringify({ user_id: Number(ownerQQ), message: [{ type: 'text', data: { text: content } }] })
+  // 重试：SnowLuma 偶尔会抖一下（10-27 上午 10:01 就丢过一条，11:01 同一条路又好了）。
+  // 网络异常 / 5xx 重试两次（0.5s、1.5s）；4xx 和 retcode≠0 不重试，那是真错，重试只会重复打扰。
+  const waits = [0, 500, 1500]
+  let lastErr = ''
+  for (let attempt = 0; attempt < waits.length; attempt++) {
+    if (waits[attempt]) await new Promise((s) => setTimeout(s, waits[attempt]))
+    try {
+      // 跨窗口去重（10-31）：如果同一文本 5 秒内已在另一个 chatId 发过，跳过。
+      // 场景：老爹同时私聊+群里说同一件事，她两边都在回复——内容可能撞车。
+      try {
+        const ddPath = dataPath('send-dedup.json')
+        const fp = String(content).slice(0, 30)
+        const now2 = Date.now()
+        // 跨**进程**（qq-server 两路 + 未来的观察者）共享这张表，所以读-改-写必须整段
+        // 带锁：11-04 前是 "读 JSON → 改 → writeFileSync"，两个进程同时进这里会互相
+        // 覆盖（后写的赢），去重表因此可能少一条也可能多一条。改用 atomic.updateJson。
+        const dedup = updateJson(ddPath, (cur) => {
+          const dd = (cur && typeof cur === 'object') ? cur : {}
+          for (const [k, v] of Object.entries(dd)) {
+            if (v && v.fp === fp && now2 - Number(v.at || 0) < 5000 && v.from !== 'qq:' + ownerQQ) return undefined  // 命中：不写，交给下面判
+          }
+          dd[now2] = { fp, at: now2, from: 'qq:' + ownerQQ }
+          // 清理 >10s 的旧记录（表会无限长，一次一条）
+          for (const [k, v] of Object.entries(dd)) { if (now2 - Number(k) > 10000) delete dd[k] }
+          return dd
+        }, { fallback: {}, waitMs: 1500 })
+        if (!dedup.ok) {
+          // 拿不到锁 = 另一个进程正在写：这一次跳过发送（宁可少发一条，也别重复打扰用户）
+          console.log('[notify] 去重表被占用（' + (dedup.error || 'lock-timeout') + '），本次跳过')
+          return { ok: true, deduped: true, reason: 'dedup-lock' }
+        }
+        if (dedup.skipped) {
+          console.log('[notify] 跨窗口去重：5秒内已在其他窗口发过类似内容，跳过')
+          return { ok: true, deduped: true }
+        }
+      } catch (e) { swallow(e, 'notify:send-dedup') }
+      // 打字标识（10-31）：推送也是"她在打字"—— 先显示输入状态，发完停止
+      try {
+        await fetch(`${snowluma}/set_input_status`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_id: Number(ownerQQ), event_type: 1 }), signal: AbortSignal.timeout(4000) })
+      } catch (e) { swallow(e, 'tools/lib/infra/notify.mjs:52') }
+      const r = await fetch(`${snowluma}/send_private_msg`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body, signal: AbortSignal.timeout(8000),
+      })
+      const j = await r.json().catch(() => ({}))
+      const ok = r.ok && (j.retcode === 0 || j.status === 'ok' || j.message_id)
+      try {
+        await fetch(`${snowluma}/set_input_status`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_id: Number(ownerQQ), event_type: 0 }), signal: AbortSignal.timeout(4000) })
+      } catch (e) { swallow(e, 'tools/lib/infra/notify.mjs:60') }
+      if (ok) {
+        // 发送成功 = 她"亲口说过"这句话：记进 QQ 对话记忆，用户接着聊才接得上
+        try { memory.remember('qq', `qq:${ownerQQ}`, ownerQQ, 'assistant', content, { kind: 'push' }) } catch (e) { swallow(e, 'tools/lib/infra/notify.mjs:63') }
+        // 交付证据（v3 §11）：推送也是"她说出去的话"，声称闸要能查到这一条
+        try {
+          const msgId = j.message_id || j.data?.message_id || ''
+          brainDelivery.record({ chat: `qq:${ownerQQ}`, platform: 'qq', text: content, msgId, kind: 'push', intentId: '' })
+          brainEvent.emit({
+            proc: 'notify', platform: 'qq', chatId: `qq:${ownerQQ}`, userId: ownerQQ,
+            role: 'assistant', text: content, kind: 'push', msgId,
+          })
+        } catch (e) { swallow(e, 'tools/lib/infra/notify.mjs:72') }
+        if (attempt > 0) console.log(`[notify] 第 ${attempt + 1} 次尝试成功（前一次：${lastErr}）`)
+        return true
+      }
+      lastErr = `HTTP ${r.status} ${JSON.stringify(j).slice(0, 160)}`
+      console.log(`[notify] 发用户失败（第 ${attempt + 1}/${waits.length} 次）：${lastErr}`)
+      if (r.status >= 400 && r.status < 500) return false
+    } catch (e) {
+      lastErr = e.message
+      console.log(`[notify] 发用户异常（第 ${attempt + 1}/${waits.length} 次）：${e.message}`)
+    }
+  }
+  return false
+}

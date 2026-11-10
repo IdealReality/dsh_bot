@@ -24,14 +24,14 @@ process.env.DSH_HOME = path.join(TMP_HOME, '.dsh')
 fs.mkdirSync(process.env.BOT_DATA_DIR, { recursive: true })
 fs.mkdirSync(process.env.DSH_HOME, { recursive: true })
 
-const { dataPath, dshPath } = await import('../tools/lib/paths.mjs')
-const mood = await import('../tools/lib/mood.mjs')
-const memory = await import('../tools/lib/memory.mjs')
-const ownerFacts = await import('../tools/lib/owner-facts.mjs')
-const promises = await import('../tools/lib/promises.mjs')
-const focus = await import('../tools/lib/focus.mjs')
-const persona = await import('../tools/lib/persona.mjs')
-const quote = await import('../tools/lib/quote.mjs')
+const { dataPath, dshPath } = await import('../tools/lib/infra/paths.mjs')
+const mood = await import('../tools/lib/mind/mood.mjs')
+const memory = await import('../tools/lib/mind/memory.mjs')
+const ownerFacts = await import('../tools/lib/mind/owner-facts.mjs')
+const promises = await import('../tools/lib/mind/promises.mjs')
+const focus = await import('../tools/lib/mind/focus.mjs')
+const persona = await import('../tools/lib/self/persona.mjs')
+const quote = await import('../tools/lib/qq/quote.mjs')
 
 let pass = 0
 const ok = async (name, fn) => {
@@ -272,7 +272,7 @@ await ok('qq-server 真的把 quoteLine 送进提示词，并且写进记忆', (
 //   真实病根三连：bvid 没落库 → 找不到投稿；space 列表默认关 → 自己发现不了；
 //   "发现即算看过" → 额度卡住一次就永久失联。
 await ok('找自己的投稿：默认会走 space 接口（否则永远"自己还没有投稿"）', () => {
-  const src = fs.readFileSync(path.join(import.meta.dirname, '..', 'tools', 'lib', 'bili-write.mjs'), 'utf8')
+  const src = fs.readFileSync(path.join(import.meta.dirname, '..', 'tools', 'lib', 'bili', 'bili-write.mjs'), 'utf8')
   assert.ok(/cfg\.useSpaceList !== false/.test(src), 'space 列表必须默认开（soft 不熔断）')
   assert.ok(/soft: true/.test(src), 'space 接口要走 soft，别把整个 B站 通道熔断')
 })
@@ -287,7 +287,7 @@ await ok('回自己作品评论：只在真回过时记 seen，失败不许吃�
 })
 
 await ok('子评论不能带图：楼中楼要降级成纯文字，并有兜底重试', () => {
-  const src = fs.readFileSync(path.join(import.meta.dirname, '..', 'tools', 'lib', 'bili-write.mjs'), 'utf8')
+  const src = fs.readFileSync(path.join(import.meta.dirname, '..', 'tools', 'lib', 'bili', 'bili-write.mjs'), 'utf8')
   assert.ok(/子评论（楼中楼）不能带图/.test(src), '注释里要写清这个平台约束')
   assert.ok(/const isNested = String\(rootRpid/.test(src), '要判断是不是楼中楼')
   assert.ok(/if \(image && isNested\)/.test(src), '楼中楼要主动去掉图')
@@ -295,7 +295,7 @@ await ok('子评论不能带图：楼中楼要降级成纯文字，并有兜底�
 })
 
 await ok('发出去了≠看得见：要有匿名可见性核查 + 被挂就自刹车', () => {
-  const w = fs.readFileSync(path.join(import.meta.dirname, '..', 'tools', 'lib', 'bili-write.mjs'), 'utf8')
+  const w = fs.readFileSync(path.join(import.meta.dirname, '..', 'tools', 'lib', 'bili', 'bili-write.mjs'), 'utf8')
   const r = fs.readFileSync(path.join(import.meta.dirname, '..', 'tools', 'commands', 'replies.mjs'), 'utf8')
   assert.ok(/export async function replyVisibility/.test(w), '要有匿名核查函数')
   assert.ok(/仅自己可见/.test(w), '要说清 state=17 的含义')
@@ -304,7 +304,7 @@ await ok('发出去了≠看得见：要有匿名可见性核查 + 被挂就自�
 })
 
 await ok('用户评论免额度：跟抖音一致', () => {
-  const w = fs.readFileSync(path.join(import.meta.dirname, '..', 'tools', 'lib', 'bili-write.mjs'), 'utf8')
+  const w = fs.readFileSync(path.join(import.meta.dirname, '..', 'tools', 'lib', 'bili', 'bili-write.mjs'), 'utf8')
   assert.ok(/bypassCap/.test(w), 'postReply 要支持 bypassCap')
   assert.ok(/用户的评论永远不受日额度限制/.test(w), '语义要写清')
 })
@@ -314,15 +314,15 @@ await ok('用户评论免额度：跟抖音一致', () => {
 //    没人崩了不管。也要保证"别人来她视频下评论"不被主动出击的日额度卡死。
 await ok('辅助服务：探活靠端口 /health，不是靠手里有没有 child', () => {
   // 名字是 auxsvc.mjs：aux.mjs 是 Windows 保留设备名（AUX），Win32 打不开 → 动态 import 静默失败
-  const aux = fs.readFileSync(path.join(import.meta.dirname, '..', 'tools', 'lib', 'auxsvc.mjs'), 'utf8')
+  const aux = fs.readFileSync(path.join(import.meta.dirname, '..', 'tools', 'lib', 'work', 'auxsvc.mjs'), 'utf8')
   assert.ok(/export async function probeHealth/.test(aux), '要有探活函数')
   assert.ok(/http:\/\/127\.0\.0\.1:\$\{port\}\/health/.test(aux), '探 /health 而不是只看进程')
   assert.ok(/export async function ensureBiliOwnReply/.test(aux), 'B站评论巡检要能自愈')
   assert.ok(/tries\.length >= 3/.test(aux), '要有退避，别 crash-loop 刷进程')
   const idx = fs.readFileSync(path.join(import.meta.dirname, '..', 'lib', 'index.js'), 'utf8')
-  // v5：进程/端口管理抽到了 tools/lib/proc.mjs（lib/index.js 曾 1194 行超护栏）。
+  // v5：进程/端口管理抽到了 tools/lib/infra/proc.mjs（lib/index.js 曾 1194 行超护栏）。
   // 断言跟着搬家 —— 但"插件侧必须做端口级探活"这条要求不变，所以两处都查。
-  const proc = fs.readFileSync(path.join(import.meta.dirname, '..', 'tools', 'lib', 'proc.mjs'), 'utf8')
+  const proc = fs.readFileSync(path.join(import.meta.dirname, '..', 'tools', 'lib', 'infra', 'proc.mjs'), 'utf8')
   assert.ok(/export function portHealthy/.test(proc), '插件侧也要端口级探活（现在在 proc.mjs）')
   assert.ok(/portHealthy/.test(idx), 'lib/index.js 必须真的用上 portHealthy')
   assert.ok(/async function watchServices/.test(idx), '插件要有 60s 看门狗')
@@ -330,7 +330,7 @@ await ok('辅助服务：探活靠端口 /health，不是靠手里有没有 chil
 })
 
 await ok('B站：别人来她视频下评论走独立额度桶，不被主动出击额度卡死', () => {
-  const w = fs.readFileSync(path.join(import.meta.dirname, '..', 'tools', 'lib', 'bili-write.mjs'), 'utf8')
+  const w = fs.readFileSync(path.join(import.meta.dirname, '..', 'tools', 'lib', 'bili', 'bili-write.mjs'), 'utf8')
   const r = fs.readFileSync(path.join(import.meta.dirname, '..', 'tools', 'commands', 'replies.mjs'), 'utf8')
   assert.ok(/capKind = 'reply'/.test(w), 'postReply 要能指定额度桶')
   assert.ok(/capRecord\(bucket\)/.test(w), '记账也要跟着桶走')

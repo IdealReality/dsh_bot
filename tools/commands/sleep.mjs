@@ -7,9 +7,9 @@ import path from "node:path"
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
 const execFileAsync = promisify(execFile)
-import { dataPath } from "../lib/paths.mjs"
-import { config } from "../lib/config.mjs"
-import { swallow } from "../lib/swallow.mjs"
+import { dataPath } from "../lib/infra/paths.mjs"
+import { config } from "../lib/infra/config.mjs"
+import { swallow } from "../lib/infra/swallow.mjs"
 import * as brain from "../brain/index.mjs"
 import { backlog as inboxBacklog } from "../brain/event.mjs"
 // progress via stdout
@@ -82,7 +82,7 @@ async function threeReviews() {
     out.push({ name: "脑体检", ok: bad.length === 0, detail: bad.length ? "红：" + bad.map((x) => x.name).join("、") : (items.length || 8) + " 条不变量全绿" })
   } catch (e) { out.push({ name: "脑体检", ok: false, detail: String(e.message).slice(0, 160) }) }
   try {
-    const ledger = await import("../lib/ledger.mjs")
+    const ledger = await import("../lib/work/ledger.mjs")
     const rep = await ledger.report({ fresh: false })
     const over = rep.me && rep.me.overBudget
     out.push({ name: "账本审查", ok: !over, detail: "今日 " + ((rep.me && rep.me.tokens && rep.me.tokens.total) || "?") + " token" + (over ? "，超预算" : "，预算内") + "；可用 " + ((rep.balance && (rep.balance.usableNow || rep.balance.total)) || "?") + " 积分" })
@@ -408,8 +408,8 @@ export async function sleepNow(opts = {}) {
       const cfg = config()
       if (cfg.brain?.bond?.enabled === false) bondOut.why = "配置关着"
       else {
-        const B = await import("../lib/bond.mjs")
-        const L = await import("../lib/llm.mjs")
+        const B = await import("../lib/mind/bond.mjs")
+        const L = await import("../lib/work/llm.mjs")
         const n = await B.remTick({ chat: L.chat, now: started, sleepGate: false })
         bondOut = { ok: true, settled: n }
         console.log("[sleep] 💞 关系结算: " + n + " 段情绪对账定型")
@@ -443,7 +443,7 @@ export async function sleepNow(opts = {}) {
     }
     // ② tar.gz 路线（容器里没有 git 时的兜底）
     try {
-      const { tarGzDir, listTarGz } = await import("../lib/tar.mjs")
+      const { tarGzDir, listTarGz } = await import("../lib/infra/tar.mjs")
       const dest = dataPath('archive', `code-${stamp}.tar.gz`)
       const r = tarGzDir(ROOT, dest, {
         exclude: [/node_modules/, /\.bak[-.]/, /^\\.git\//, /^test\/.*\.tmp/],

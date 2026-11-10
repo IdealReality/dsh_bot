@@ -22,7 +22,7 @@ process.env.BOT_DATA_DIR = TMP
 process.env.HOME = process.env.HOME || TMP
 process.env.BOT_DEBUG = '1'          // paths.mjs 要求：开了调试就必须显式隔离数据目录（这里已给）
 
-const office = await import('../tools/lib/office.mjs')
+const office = await import('../tools/lib/work/office.mjs')
 const FILE = path.join(TMP, 'office', 'tasks.json')
 const CLI = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', 'tools', 'bot.mjs')
 

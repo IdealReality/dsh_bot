@@ -10,8 +10,8 @@
 //   node bot.mjs selfwake --clear              取消
 import fs from 'node:fs'
 import path from 'node:path'
-import { homePath } from '../lib/paths.mjs'
-import { swallow } from '../lib/swallow.mjs'
+import { homePath } from '../lib/infra/paths.mjs'
+import { swallow } from '../lib/infra/swallow.mjs'
 
 const FILE = () => path.join(process.env.DSH_HOME || homePath('.dsh'), 'bot-next-wake.json')
 const pad = (n) => String(n).padStart(2, '0')

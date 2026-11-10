@@ -3,10 +3,10 @@
 // 抽帧（ffmpeg）留给 v0.2 —— 没有直链时绝不伪装成"已看完" ✓
 //
 //   node bot.mjs debrief --bvid BV1xxxx [--json]
-import { apiGet, makeHeaders, reportWatch } from '../lib/bili-api.mjs'
-import { loadCred } from '../lib/cred.mjs'
-import { config } from '../lib/config.mjs'
-import { swallow } from '../lib/swallow.mjs'
+import { apiGet, makeHeaders, reportWatch } from '../lib/bili/bili-api.mjs'
+import { loadCred } from '../lib/infra/cred.mjs'
+import { config } from '../lib/infra/config.mjs'
+import { swallow } from '../lib/infra/swallow.mjs'
 
 function arg(argv, name) {
   const i = argv.indexOf(name)
@@ -150,7 +150,7 @@ export async function run(argv = []) {
   let visionDesc = null
   let visionWhy = ''
   try {
-    const BF = await import('../lib/bili-frames.mjs')
+    const BF = await import('../lib/bili/bili-frames.mjs')
     const cfg = config()
     const wantVision = cfg.vision?.debrief !== false
     const subtitleEnough = subtitles.length >= 8
@@ -177,7 +177,7 @@ export async function run(argv = []) {
   let hear = null
   let hearWhy = ''
   try {
-    const BA = await import('../lib/bili-audio.mjs')
+    const BA = await import('../lib/bili/bili-audio.mjs')
     const cfg = config()
     const wantHear = cfg.vision?.debriefHear !== false
     const coh = coherenceHint(String(d.title ?? ''), subtitles)
@@ -212,7 +212,7 @@ export async function run(argv = []) {
   // ⑤ 顺手点个赞（react.like 开了才动）：看过的视频真点过赞，账号才像活人
   if (config().bilibili?.react?.like === true) {
     try {
-      const w = await import('../lib/bili-write.mjs')
+      const w = await import('../lib/bili/bili-write.mjs')
       const r = await w.likeVideo(bvid, { go: true })
       if (!r.ok) console.log(json ? '' : `  （点赞没成：${String(r.why ?? '').slice(0, 60)}）`)
       else if (!json) console.log(`  👍 ${r.why}`)

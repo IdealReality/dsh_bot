@@ -16,7 +16,7 @@ process.env.USERPROFILE = TMP
 let bad = 0
 const ok = (c, l) => { console.log((c ? '  ✓ ' : '  ✗ ') + l); if (!c) bad++ }
 
-const M = await import('../tools/lib/memory.mjs')
+const M = await import('../tools/lib/mind/memory.mjs')
 const now = Date.now()
 
 // ── ① shardsOf 必须认出 part2 ────────────────────────────────────────────

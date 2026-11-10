@@ -36,7 +36,7 @@
 // recall.mjs 是**检索**：它该只负责"按线索找条目"，越纯粹越好（可评测、可换权重）。
 // "这条为什么相关""该怎么讲给她听"是**编排层的判断**，不是检索的职责。
 // 混在一起，以后调召回质量就分不清是检索错了还是加工错了。
-import { swallow } from '../lib/swallow.mjs'
+import { swallow } from '../lib/infra/swallow.mjs'
 import { strengths, touchStrength } from './episode.mjs'
 
 const HOUR = 3_600_000

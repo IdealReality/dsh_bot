@@ -17,8 +17,8 @@ fs.writeFileSync(process.env.BOT_CONFIG, JSON.stringify({
 let bad = 0
 const ok = (n, p, d = '') => { if (!p) bad++; console.log(`${p ? '  ✓' : '  ✗'} ${n}${d ? ' —— ' + d : ''}`) }
 
-const T = await import('../tools/lib/tools.mjs')
-const memory = await import('../tools/lib/memory.mjs')
+const T = await import('../tools/lib/work/tools.mjs')
+const memory = await import('../tools/lib/mind/memory.mjs')
 
 // 记忆落在 ~/.data/qq/episodes.jsonl（memory.remember → episodeFile('qq')）
 const dump = () => {

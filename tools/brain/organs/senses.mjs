@@ -20,8 +20,8 @@
 //
 // 契约：senses() 同步、永不抛错；每项是 string 或 null；空数组 = 身体没话说。
 // 顺序有讲究：清醒度（最底层的档位）→ 病感（全身性）→ 慢痛（局部）→ 饿感（最贴近当下，放最后）。
-import { feverSense as immuneFeverSense } from '../../lib/immune.mjs'
-import { swallow } from '../../lib/swallow.mjs'
+import { feverSense as immuneFeverSense } from '../../lib/mind/immune.mjs'
+import { swallow } from '../../lib/infra/swallow.mjs'
 
 const _organs = {}
 // 预取（模块加载即发车）：pain → hpa → field 的链路在微任务里才求值，

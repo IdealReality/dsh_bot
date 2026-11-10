@@ -45,7 +45,7 @@ import { sleepPath } from '../paths.mjs'
 import * as field from '../field.mjs'
 import * as neuron from '../cell/neuron.mjs'
 import * as hpa from './hpa.mjs'
-import { swallow } from '../../lib/swallow.mjs'
+import { swallow } from '../../lib/infra/swallow.mjs'
 
 const MIN = 60_000
 const HOUR = 3_600_000

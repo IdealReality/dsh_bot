@@ -45,7 +45,7 @@ const ok = (name, pass, detail = '') => {
 
 // ── ② notify：去重表必须真的写盘 ─────────────────────────────────────────
 {
-  const N = await import('../tools/lib/notify.mjs')
+  const N = await import('../tools/lib/infra/notify.mjs')
   // 干跑会让 sendOwnerQQ 直接返回，去重分支就在那之前 —— 需要真跑发送路径。
   // 这里用本地假 SnowLuma：127.0.0.1 上的一个一次性 HTTP 服务。
   const http = await import('node:http')
@@ -53,7 +53,7 @@ const ok = (name, pass, detail = '') => {
   await new Promise((r) => srv.listen(0, '127.0.0.1', r))
   const port = srv.address().port
   // config() 不缓存：写一份 bot.config.json 就是"改配置"
-  const { configPath } = await import('../tools/lib/paths.mjs')
+  const { configPath } = await import('../tools/lib/infra/paths.mjs')
   fs.mkdirSync(path.dirname(configPath), { recursive: true })
   fs.writeFileSync(configPath, JSON.stringify({ guard: { dryRun: false }, owner: { qq: '10001' }, qq: { snowluma_http: 'http://127.0.0.1:' + port } }, null, 1))
   const ddFile = path.join(TMP, 'send-dedup.json')
@@ -68,7 +68,7 @@ const ok = (name, pass, detail = '') => {
 
 // ── ③ outbox：并发入队不丢条目 ───────────────────────────────────────────
 {
-  const CI = await import('../tools/lib/channel-io.mjs')
+  const CI = await import('../tools/lib/qq/channel-io.mjs')
   try { fs.rmSync(path.join(TMP, 'outbox.json'), { force: true }) } catch { /* 首建 */ }
   for (let i = 0; i < 20; i++) CI.pushOutbox({ platform: 'wechat', chatId: 'wx' + i, text: 'm' + i })
   const got = CI.drainOutbox('wechat')
@@ -87,7 +87,7 @@ const ok = (name, pass, detail = '') => {
 
 // ── ④ swallow：预期缺失与真事故分账 ───────────────────────────────────────
 {
-  const S = await import('../tools/lib/swallow.mjs')
+  const S = await import('../tools/lib/infra/swallow.mjs')
   const enoent = Object.assign(new Error("ENOENT: no such file or directory, open '/nope'"), { code: 'ENOENT' })
   S.swallow(enoent, 'test:soft', { force: true })
   S.swallow(new ReferenceError('Cannot access \'ex\' before initialization'), 'test:real', { force: true })

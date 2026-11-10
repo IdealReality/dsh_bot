@@ -18,7 +18,7 @@ import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 const REPO = path.dirname(new URL('.', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'))
-const { refTextOf, sanitizeForTts } = await import(pathToFileURL(path.join(REPO, 'tools', 'lib', 'tts.mjs')).href)
+const { refTextOf, sanitizeForTts } = await import(pathToFileURL(path.join(REPO, 'tools', 'lib', 'media', 'tts.mjs')).href)
 
 let pass = 0, fail = 0
 const ok = (name, cond, extra = '') => {
@@ -52,7 +52,7 @@ ok('目录没有 txt → 空串', refTextOf(path.join(tmp, 'nope', 'a.wav')) ===
 ok('空路径 → 空串', refTextOf('') === '')
 
 // ④ 源码守卫：synth 必须以转写覆盖配置，且显式 override 优先
-const tts = fs.readFileSync(path.join(REPO, 'tools', 'lib', 'tts.mjs'), 'utf8')
+const tts = fs.readFileSync(path.join(REPO, 'tools', 'lib', 'media', 'tts.mjs'), 'utf8')
 ok('synth 会核对转写', tts.includes('refTextOf(refAudio)') && tts.includes('prompt = truth'))
 ok('参考文本不符会报一声', tts.includes('参考文本与'))
 ok('显式 override 仍然优先（情绪三层重构后由 refPool 负责）', tts.includes('override.prompt_text ?? refTextOf('))

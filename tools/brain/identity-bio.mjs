@@ -20,9 +20,9 @@
 // ══════════════════════════════════════════════════════════════════════════
 import fs from 'node:fs'
 import path from 'node:path'
-import { dataPath } from '../lib/paths.mjs'
+import { dataPath } from '../lib/infra/paths.mjs'
 import { mutateJson } from './json.mjs'
-import { swallow } from '../lib/swallow.mjs'
+import { swallow } from '../lib/infra/swallow.mjs'
 import * as field from './field.mjs'
 import * as affect from './affect.mjs'
 import * as metabolism from './organ/metabolism.mjs'

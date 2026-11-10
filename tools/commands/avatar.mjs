@@ -7,8 +7,8 @@
 //
 // 她的用法：管理员问"你头像呢/你长什么样"→ 自己真看一眼再答，
 // 不要拿 persona.md 里那段文字描述当答案（那是设定，不一定等于挂出去的脸）。
-import * as A from '../lib/avatar.mjs'
-import { config } from '../lib/config.mjs'
+import * as A from '../lib/media/avatar.mjs'
+import { config } from '../lib/infra/config.mjs'
 
 const has = (n) => process.argv.includes(n)
 
@@ -36,13 +36,13 @@ export async function run(argv) {
 
   // 默认：真看一眼再描述（走 vision 模型）
   try {
-    const { dataUri, visionOn } = await import('../lib/vision.mjs')
+    const { dataUri, visionOn } = await import('../lib/media/vision-api.mjs')
     if (!visionOn()) {
       console.log(`头像文件：${file}`)
       console.log('（视觉模型没开，只能给你路径，看不了内容）')
       return
     }
-    const llm = await import('../lib/llm.mjs')
+    const llm = await import('../lib/work/llm.mjs')
     const r = await llm.chat([
       { role: 'user', content: [
         { type: 'text', text: '这是什么？用两三句话说清楚画面内容：主体、配色、画风、有没有文字。' },

@@ -5,15 +5,15 @@
 //   node bot.mjs comment --bvid BV1xx --message "…" [--root rpid --parent rpid] [--go]
 //   node bot.mjs comment --share --bvid BV1xx --message "…" --reason "至少八字" --score 15 --rank 1 [--go]
 //   不带 --go = 干跑：全链路检查但只打印要发什么，不 POST ✓
-import { apiGet, makeHeaders } from '../lib/bili-api.mjs'
-import { loadCred, missingForWrite, looksLikeJct, explainCode, HARD_STOP_CODES } from '../lib/cred.mjs'
-import { config } from '../lib/config.mjs'
-import { validateShare } from '../lib/share-policy.mjs'
-import * as guard from '../lib/guard.mjs'
-import * as memory from '../lib/memory.mjs'
-import { sanitizeFor, loadBiliFaces } from '../lib/stickers.mjs'
-import { sanitizeText } from '../lib/sanitize.mjs'
-import { swallow } from '../lib/swallow.mjs'
+import { apiGet, makeHeaders } from '../lib/bili/bili-api.mjs'
+import { loadCred, missingForWrite, looksLikeJct, explainCode, HARD_STOP_CODES } from '../lib/infra/cred.mjs'
+import { config } from '../lib/infra/config.mjs'
+import { validateShare } from '../lib/work/share-policy.mjs'
+import * as guard from '../lib/infra/guard.mjs'
+import * as memory from '../lib/mind/memory.mjs'
+import { sanitizeFor, loadBiliFaces } from '../lib/media/stickers.mjs'
+import { sanitizeText } from '../lib/qq/sanitize.mjs'
+import { swallow } from '../lib/infra/swallow.mjs'
 
 function arg(argv, name) {
   const i = argv.indexOf(name)
@@ -23,7 +23,7 @@ function arg(argv, name) {
 async function bvidToAid(bvid, H) {
   const u = new URL('https://api.bilibili.com/x/web-interface/view')
   u.searchParams.set('bvid', bvid)
-  const r = await (await import('../lib/bili-api.mjs')).apiGet(u.href, H)
+  const r = await (await import('../lib/bili/bili-api.mjs')).apiGet(u.href, H)
   if (Number(r?.code) !== 0) throw new Error(`读视频元信息失败：${r?.message ?? '未知'}`)
   return { aid: r.data.aid, title: r.data.title }
 }
@@ -136,7 +136,7 @@ export async function run(argv = []) {
   const quota = await import('./quota.mjs')
   quota.run(['record', '--type', isShare ? 'share' : 'reply', '--target', bvid, '--note', title.slice(0, 30)])
   memory.remember('bilibili', chatId, cfg.identity?.name ?? 'dsh_bot', 'assistant', message)
-  try { const { recordBili } = await import('../lib/outbox.mjs'); recordBili({ kind: isShare ? '分享评论' : (root ? '回评' : '评论'), title, bvid, text: message }) } catch (e) { swallow(e, 'tools/commands/comment.mjs:136') }
+  try { const { recordBili } = await import('../lib/qq/outbox.mjs'); recordBili({ kind: isShare ? '分享评论' : (root ? '回评' : '评论'), title, bvid, text: message }) } catch (e) { swallow(e, 'tools/commands/comment.mjs:136') }
   // 登记 rpid：回评论扫描（replies 命令）靠它找到这条评论下的新回复
   // 10-29：先分清两件事再记账 ——
   //   ① 存在性：带登录态问 /x/v2/reply/detail（不带 cookie 一律 12006，会误判成"没发出去"）
@@ -144,7 +144,7 @@ export async function run(argv = []) {
   let exists = null
   let visible = null
   try {
-    const { commentExists, replyVisibility } = await import('../lib/bili-write.mjs')
+    const { commentExists, replyVisibility } = await import('../lib/bili/bili-write.mjs')
     const ex = await commentExists(aid, j?.data?.rpid, root)
     exists = ex.checked ? ex.exists : null
     if (exists === false) console.log(`  ⚠ 刚发完立刻查不到（${ex.why}）—— 可能是接口有延迟，也可能被挂「仅自己可见」，过几分钟再看一眼再说`)
@@ -155,7 +155,7 @@ export async function run(argv = []) {
       if (visible === false) console.log('  ⚠ 存在，但匿名看不到 —— 被挂「仅自己可见」了，别人还没看见')
     }
   } catch (e) { swallow(e, 'tools/commands/comment.mjs:154') }
-  try { const { recordMyComment } = await import('../lib/bili-write.mjs'); recordMyComment(bvid, aid, j?.data?.rpid, { exists, visible }) } catch (e) { swallow(e, 'tools/commands/comment.mjs:155') }
+  try { const { recordMyComment } = await import('../lib/bili/bili-write.mjs'); recordMyComment(bvid, aid, j?.data?.rpid, { exists, visible }) } catch (e) { swallow(e, 'tools/commands/comment.mjs:155') }
   console.log(`✓ 已发送（rpid=${j?.data?.rpid ?? '?'}）${isShare ? ' · 分享额度已扣' : ''}`)
   console.log(`  ${title} → ${message.slice(0, 60)}`)
 
@@ -164,7 +164,7 @@ export async function run(argv = []) {
   // 所以真发成功后用 QQ 私信把链接推过去，这才是用户能收到的那条通知。
   if (isShare) {
     try {
-      const { sendOwnerQQ } = await import('../lib/notify.mjs')
+      const { sendOwnerQQ } = await import('../lib/infra/notify.mjs')
       const ok = await sendOwnerQQ(`【B站分享】《${title.slice(0, 40)}》\n${message.slice(0, 80)}\nhttps://www.bilibili.com/video/${bvid}`)
       console.log(ok ? '  📨 已推送到用户 QQ（评论区 @ 自己账号不会弹通知）' : '  ⚠️ QQ 推送失败（SnowLuma 没起？用户可能注意不到这条分享）')
     } catch (e) { swallow(e, 'tools/commands/comment.mjs:167') }

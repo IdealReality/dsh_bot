@@ -6,14 +6,14 @@ import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { config } from '../lib/config.mjs'
-import * as llm from '../lib/llm.mjs'
-import * as memory from '../lib/memory.mjs'
-import { ensureSelfSticker } from '../lib/stickers.mjs'
-import { dataPath } from '../lib/paths.mjs'
-import { acquire } from '../lib/lock.mjs'
-import * as watchlog from '../lib/watchlog.mjs'
-import { swallow } from '../lib/swallow.mjs'
+import { config } from '../lib/infra/config.mjs'
+import * as llm from '../lib/work/llm.mjs'
+import * as memory from '../lib/mind/memory.mjs'
+import { ensureSelfSticker } from '../lib/media/stickers.mjs'
+import { dataPath } from '../lib/infra/paths.mjs'
+import { acquire } from '../lib/infra/lock.mjs'
+import * as watchlog from '../lib/media/watchlog.mjs'
+import { swallow } from '../lib/infra/swallow.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const BOT_MJS = path.join(HERE, '..', 'bot.mjs')
@@ -190,7 +190,7 @@ export async function run(argv = []) {
       // 弹幕：LLM 觉得值得才发（danmaku.enabled + 日额度在 bili-write 里把关）
       if (danmaku && dry === false && hc.danmaku?.enabled === true) {
         try {
-          const w = await import('../lib/bili-write.mjs')
+          const w = await import('../lib/bili/bili-write.mjs')
           const r = await w.sendDanmaku(bvid, danmaku, { go: true })
           if (r.ok) log('  💬 ' + r.why)
         } catch (e) { swallow(e, 'bili-watch:best-effort') }
@@ -208,13 +208,13 @@ export async function run(argv = []) {
       else if (comment && cfg.tattle?.enabled !== false) {
         // 低分/未到线但有内容 → 分享欲队列（不直接发，tick 评估时机）
         try {
-          const { enqueue } = await import('../lib/share-queue.mjs')
+          const { enqueue } = await import('../lib/work/share-queue.mjs')
           enqueue({ kind: 'video', title: it.title, text: comment.slice(0, 80), meta: '评分 ' + Math.round(score) })
         } catch (e) { swallow(e, 'bili-watch:best-effort') }
       }
       if (score >= 16 && hc.react?.coin === true && dry === false) {
         try {
-          const w = await import('../lib/bili-write.mjs')
+          const w = await import('../lib/bili/bili-write.mjs')
           const r = await w.coinVideo(bvid, { go: true, num: 1 })
           if (r.ok) log('  🪙 ' + r.why)
         } catch (e) { swallow(e, 'bili-watch:best-effort') }
@@ -222,7 +222,7 @@ export async function run(argv = []) {
       // 关注好 UP：评分高的视频作者值得关注（follow 显式开）
       if (score >= 16 && hc.follow?.enabled === true && dry === false) {
         try {
-          const w = await import('../lib/bili-write.mjs')
+          const w = await import('../lib/bili/bili-write.mjs')
           const r = await w.followUser(String(it.ownerMid || ''), { go: true })
           if (r.ok) log('  ➕ 已关注 UP：' + (it.owner || ''))
         } catch (e) { swallow(e, 'bili-watch:best-effort') }
@@ -233,7 +233,7 @@ export async function run(argv = []) {
         try {
           let pic = null
           if (cfg.imageGen?.enabled !== false) {
-            const { generateStickerImage } = await import('../lib/imggen.mjs')
+            const { generateStickerImage } = await import('../lib/media/imggen.mjs')
             pic = await generateStickerImage(sticker)
             if (pic) log('  🎨 AI 表情包已生成：' + pic.split(/[\\/]/).pop())
           }

@@ -7,7 +7,7 @@
 //   {"message":"tts failed","Exception":"'gbk' codec can't encode character '\\U0001f41f' in position 32"}
 //   Windows 上的 api_v2.py 用 GBK 编码 → 「・」(U+30FB) 和 🐟(U+1F41F) 塞不进去就整条 400。
 //   同一份配置、纯中文 → 200 OK。所以修在客户端：合成前把 GBK 装不下的字符洗掉。
-import { sanitizeForTts } from '../tools/lib/tts.mjs'
+import { sanitizeForTts } from '../tools/lib/media/tts.mjs'
 
 let pass = 0, fail = 0
 const ok = (name, cond, extra = '') => {

@@ -24,10 +24,10 @@ process.env.DSH_HOME = path.join(sandbox, '.dsh')
 process.env.USERPROFILE = sandbox
 process.env.HOME = sandbox
 
-const { dataDir: DATA } = await import('../tools/lib/paths.mjs')
+const { dataDir: DATA } = await import('../tools/lib/infra/paths.mjs')
 fs.mkdirSync(DATA, { recursive: true })
 
-const L = await import('../tools/lib/ledger.mjs')
+const L = await import('../tools/lib/work/ledger.mjs')
 
 let passed = 0
 const pending = []
@@ -250,7 +250,7 @@ const ROOT = path.join(path.dirname(new URL(import.meta.url).pathname.replace(/^
 const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8')
 
 ok('python 侧必须用 stream_reader 读穿多帧，不能用能"只解第一帧"的接口', () => {
-  const py = read('tools/lib/ledger_usage.py')
+  const py = read('tools/lib/work/ledger_usage.py')
   assert.match(py, /stream_reader/)                       // DSH 日志每行一个 zstd 帧
   assert.doesNotMatch(py, /ZstdDecompressor\(\)\.decompress\(/)   // 只解第一帧 = 只拿到会话头
   assert.match(py, /session\.v\*\.jsonl\.zst/)            // 版本前缀要通配
@@ -259,7 +259,7 @@ ok('python 侧必须用 stream_reader 读穿多帧，不能用能"只解第一�
 })
 
 ok('python 侧按 assistant/message 的 usage 记账，且区分她与用户', () => {
-  const py = read('tools/lib/ledger_usage.py')
+  const py = read('tools/lib/work/ledger_usage.py')
   assert.match(py, /assistant\/message/)
   assert.match(py, /inputTokens/)
   assert.match(py, /outputTokens/)
@@ -268,7 +268,7 @@ ok('python 侧按 assistant/message 的 usage 记账，且区分她与用户', (
 })
 
 ok('账本模块不写死余额接口，也不把 0 当余额', () => {
-  const m = read('tools/lib/ledger.mjs')
+  const m = read('tools/lib/work/ledger.mjs')
   assert.match(m, /balanceUrl/)                       // 走配置，不硬编码
   assert.match(m, /if \(!url \|\| !key\) return null/)
   assert.match(m, /Number\.isFinite\(w\.total\)/)     // 接口不通/字段缺 → 过滤掉，不是 0
@@ -294,7 +294,7 @@ ok('账本刷新不能被唤醒闸门挡住（她忙的时候才最需要查账�
 })
 
 ok('聊天提示里（QQ/微信/抖音私信）带账本，群聊不带', () => {
-  const p = read('tools/lib/persona.mjs')
+  const p = read('tools/lib/self/persona.mjs')
   assert.match(p, /function ledgerBlock/)
   assert.match(p, /if \(isGroup\) return ''/)        // 家里的账不外扬
   assert.match(p, /readBrief\(\)/)
@@ -315,7 +315,7 @@ ok('两个常驻服务都起了账本刷新（否则聊天里永远是旧数字�
 })
 
 ok('配置里有账本默认值（预算/单价/工作区）', () => {
-  const c = read('tools/lib/config.mjs')
+  const c = read('tools/lib/infra/config.mjs')
   assert.match(c, /ledger: \{/)
   assert.match(c, /dailyBudget/)
   assert.match(c, /mineWorkspace/)

@@ -16,7 +16,7 @@ process.env.USERPROFILE = TMP
 process.env.HOME = TMP
 process.env.DSH_HOME = path.join(TMP, '.dsh')
 
-const wound = await import('../tools/lib/wound.mjs')
+const wound = await import('../tools/lib/mind/wound.mjs')
 const pain = await import('../tools/brain/organ/pain.mjs')
 const field = await import('../tools/brain/field.mjs')
 

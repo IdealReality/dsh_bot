@@ -21,11 +21,11 @@
 //   ③ **三态而不是二态**：未知必须是一个合法出口。
 //      "想不起来"不等于"没做过"—— claim.mjs 的 10-29 事故就是这一条。
 import fs from 'node:fs'
-import { config } from '../lib/config.mjs'
-import { dataPath } from '../lib/paths.mjs'
-import { swallow } from '../lib/swallow.mjs'
+import { config } from '../lib/infra/config.mjs'
+import { dataPath } from '../lib/infra/paths.mjs'
+import { swallow } from '../lib/infra/swallow.mjs'
 import * as recall from './recall.mjs'
-import { kinText as kinTextOf, HOWTO as HOWTO_OF } from '../lib/self-context.mjs'
+import { kinText as kinTextOf, HOWTO as HOWTO_OF } from '../lib/mind/self-context.mjs'
 // 六层仿生（化学/生物/心理/神经/主观/哲学）—— verify 的"人"那部分
 import * as bio from './identity-bio.mjs'
 

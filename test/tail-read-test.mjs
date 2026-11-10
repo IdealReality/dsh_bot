@@ -8,7 +8,7 @@ process.env.DSH_HOME = path.join(TMP, '.dsh')
 process.env.HOME = TMP
 process.env.USERPROFILE = TMP
 
-const M = await import('../tools/lib/memory.mjs')
+const M = await import('../tools/lib/mind/memory.mjs')
 let bad = 0
 const ok = (c, l) => { console.log((c ? '  ✓ ' : '  ✗ ') + l); if (!c) bad++ }
 

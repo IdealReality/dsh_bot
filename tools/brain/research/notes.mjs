@@ -14,7 +14,7 @@ import { LENS_ORDER, lensLabel } from './lenses.mjs'
 // 早先写成"注入 tree"的懒加载会让 promptBlock 在真实进程里永远返回空 ——
 // 只有测试注入了模块，生产没注入 → 静默失效。那一版在写出来十分钟内就被自己抓住了。
 import { axisStats, budgetLeft, summarize, listStates } from './tree.mjs'
-import { sanitizeText } from '../../lib/sanitize.mjs'
+import { sanitizeText } from '../../lib/qq/sanitize.mjs'
 
 const clip = (s, n) => {
   const t = String(s || '').replace(/\s+/g, ' ').trim()

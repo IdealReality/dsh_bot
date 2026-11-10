@@ -15,9 +15,9 @@ process.env.HOME = tmp
 process.env.DSH_HOME = path.join(tmp, '.dsh')
 fs.mkdirSync(path.join(tmp, '.bot-ai'), { recursive: true })
 
-const { normalizeMemoryText, hasPlaceholder } = await import('../tools/lib/normalize.mjs')
-const paths = await import('../tools/lib/paths.mjs')
-const memory = await import('../tools/lib/memory.mjs')
+const { normalizeMemoryText, hasPlaceholder } = await import('../tools/lib/infra/normalize.mjs')
+const paths = await import('../tools/lib/infra/paths.mjs')
+const memory = await import('../tools/lib/mind/memory.mjs')
 
 if (!paths.dataDir.startsWith(tmp)) {
   console.error(`✗ 隔离失败：dataDir=${paths.dataDir} 指向了真实目录，测试中止`); process.exit(2)

@@ -8,44 +8,44 @@
 // 保留旧装配做对照组：config.brain.mode = 'shadow' 时 qq-server 仍走 buildMessages，
 // 这里只被 doctor / 测试 / live 模式调用。
 import fs from 'node:fs'
-import { config } from '../lib/config.mjs'
-import { homePath, dataPath } from '../lib/paths.mjs'
-import * as memory from '../lib/memory.mjs'
+import { config } from '../lib/infra/config.mjs'
+import { homePath, dataPath } from '../lib/infra/paths.mjs'
+import * as memory from '../lib/mind/memory.mjs'
 import {
   personaText, identityLine, ownerLine, clockBlock, capabilityBlock, groupFactBlock,
   ledgerBlock, dropOwnerMistakes, dropCardMistakes, PLATFORM_HINTS, RECENT_N, histAge,
-} from '../lib/persona.mjs'
+} from '../lib/self/persona.mjs'
 // 2026-11-07：live 装配（brain.mode=live）也要有最近对话的时间维度与出站清洗。
 // 旧版这里直接 `[sys, ...recent, user]`：recent 是 `{role, content}`，
 // 既没有时间前缀（她和三小时前那句分不出先后），也没有剥掉历史里被污染的时间标注。
 // 结果是 shadow/live 两条路线**行为不一致** —— 切到 live 就退回"每句话都像第一次说"。
 import { cleanHistoryLine } from './cohere/expression.mjs'
-import { takeSkipped } from '../lib/skipped-messages.mjs'
-import { stickerPrompt } from '../lib/stickers.mjs'
-import { emotionTagPrompt } from '../lib/emotion.mjs'
+import { takeSkipped } from '../lib/qq/skipped-messages.mjs'
+import { stickerPrompt } from '../lib/media/stickers.mjs'
+import { emotionTagPrompt } from '../lib/mind/emotion.mjs'
 import * as working from './working.mjs'
 import * as recall from './recall.mjs'
 import * as memchannel from './memchannel.mjs'
-import { dreamToMention, recentDreams } from '../lib/dream-read.mjs'
-import * as watchlog from '../lib/watchlog.mjs'
+import { dreamToMention, recentDreams } from '../lib/mind/dream-read.mjs'
+import * as watchlog from '../lib/media/watchlog.mjs'
 import * as researchNotes from './research/notes.mjs'
 import * as facts from './facts.mjs'
 import * as intents from './intents.mjs'
 import * as affect from './affect.mjs'
 import * as selfM from './self.mjs'
 import * as selfcon from './organ/selfcon.mjs'
-import * as personaNeutral from '../lib/persona-neutral.mjs'
-import { selfContextBlock } from '../lib/self-context.mjs'
+import * as personaNeutral from '../lib/self/persona-neutral.mjs'
+import { selfContextBlock } from '../lib/mind/self-context.mjs'
 import * as identity from './identity.mjs'
-import { INJECTION_GUARD, CURIOSITY_RULE } from '../lib/persona-neutral.mjs'
-import { assertAssembly } from '../lib/assembly-contract.mjs'
-import { briefState, briefUsable, PRESENT_NOTE } from '../lib/state-brief.mjs'
+import { INJECTION_GUARD, CURIOSITY_RULE } from '../lib/self/persona-neutral.mjs'
+import { assertAssembly } from '../lib/infra/assembly-contract.mjs'
+import { briefState, briefUsable, PRESENT_NOTE } from '../lib/mind/state-brief.mjs'
 import * as field from './field.mjs'
 import * as anchor from './anchor.mjs'
 import * as schema from './schema.mjs'
 import * as competence from './competence.mjs'
 import { bump, setValue } from './metrics.mjs'
-import { swallow } from '../lib/swallow.mjs'
+import { swallow } from '../lib/infra/swallow.mjs'
 
 export const DEFAULT_BUDGET = 5650
 

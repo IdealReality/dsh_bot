@@ -5,18 +5,18 @@
 // 幂等: selfcon.seedFrom 里挡了二次迁移 (seededAt 已设即拒绝)。
 //
 // 用法: node tools/commands/selfcon-seed.mjs
-import { dataPath } from '../lib/paths.mjs'
-import { config } from '../lib/config.mjs'
-import { personaText } from '../lib/persona.mjs'
-import { selfName, selfClaim, ownerTitle } from '../lib/persona-voice.mjs'
+import { dataPath } from '../lib/infra/paths.mjs'
+import { config } from '../lib/infra/config.mjs'
+import { personaText } from '../lib/self/persona.mjs'
+import { selfName, selfClaim, ownerTitle } from '../lib/self/persona-voice.mjs'
 import * as selfcon from '../brain/organ/selfcon.mjs'
-import { swallow } from '../lib/swallow.mjs'
+import { swallow } from '../lib/infra/swallow.mjs'
 
 /** 从记忆里找最早被叫名字的一次 (取匹配里最旧的一条做证据锚点)。
  *  grepEpisodes 返回按时间序的 {ts, text, role}; 检索不到就返回 null -- 宁缺, 不编造。 */
 async function findNameOrigin(name) {
   try {
-    const mem = await import('../lib/memory.mjs')
+    const mem = await import('../lib/mind/memory.mjs')
     const rows = mem.grepEpisodes(name, { limit: 30, role: 'user' })
     if (!rows.length) return null
     const oldest = rows[0]

@@ -4,7 +4,7 @@
 //   node bot.mjs browser links                              # 当前页的可点链接
 //   node bot.mjs browser click "选择器" [序号] | type "选择器" "文字" | enter
 //   node bot.mjs browser scroll ±px | back | shot [--tag 名] | status | close
-import { browserRead, browserAct, browserShot, browserStatus, browserClose, browserPeek, browserDetach, browserTabs, browserCloseAll, browserCloseTabAt, browserActionsLog, browserFind } from '../lib/browser.mjs'
+import { browserRead, browserAct, browserShot, browserStatus, browserClose, browserPeek, browserDetach, browserTabs, browserCloseAll, browserCloseTabAt, browserActionsLog, browserFind } from '../lib/media/browser-engine.mjs'
 
 function deviceOf(argv) {
   const d = argv[argv.indexOf('--device') + 1]

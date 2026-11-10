@@ -1,7 +1,7 @@
 // platforms-test —— 平台语义单测（v5）。
 // 回归的重点：**关一个平台绝不能影响另一个平台**（旧版 platforms.qq=false 会杀掉微信）。
 import assert from 'node:assert'
-import * as P from '../tools/lib/platforms.mjs'
+import * as P from '../tools/lib/qq/platforms.mjs'
 
 const cfg = (platforms, qq, wechat) => ({ platforms, qq, wechat })
 

@@ -3,11 +3,11 @@
 // 触发：bili-watch 深读评分 >= 阈值（默认 15）时调用；手动也能跑。
 // 节流：一天最多 3 条（config.tattle.dailyMax），避免变成骚扰。
 import fs from 'node:fs'
-import { config } from '../lib/config.mjs'
-import { fill } from '../lib/persona-voice.mjs'
-import { dataPath } from '../lib/paths.mjs'
-import { sendOwnerQQ } from '../lib/notify.mjs'
-import { swallow } from '../lib/swallow.mjs'
+import { config } from '../lib/infra/config.mjs'
+import { fill } from '../lib/self/persona-voice.mjs'
+import { dataPath } from '../lib/infra/paths.mjs'
+import { sendOwnerQQ } from '../lib/infra/notify.mjs'
+import { swallow } from '../lib/infra/swallow.mjs'
 
 const NL = String.fromCharCode(10)
 const STATE = () => dataPath('tattle.json')
@@ -35,7 +35,7 @@ function markSent(st) {
 
 /** 写汇报：LLM 用她的口吻把「看了什么+我的看法」讲给笨蛋管理员听。 */
 async function compose({ title, bvid, score, highlight, reason }) {
-  const llm = await import('../lib/llm.mjs')
+  const llm = await import('../lib/work/llm.mjs')
   const r = await llm.chat([
     { role: 'system', content: fill('你是{name}，一只住在电脑里的鲸鱼娘，正在 QQ 私信跟{owner}（你的用户）「打小报告」——汇报你今天看到的好视频。要求：像跟家人聊天，60 字内，先说看到了什么，再说你为什么觉得值得说（你的真实看法），最后可以带一句想跟他讨论的点。不要客套开头，直接进内容。只输出消息本身。') },
     { role: 'user', content: `视频：《${title}》（BV ${bvid}）\n我的评分：${score}/20\n评分理由：${reason || '（无）'}\n值得说的点：${highlight || '（无，自己从理由里提炼）'}` },
@@ -55,14 +55,14 @@ export async function tattle({ title, bvid, score, reason, highlight }) {
   const full = `🐋 ${text}${NL}https://www.bilibili.com/video/${bvid}`
   // 10-31：全局闸门（三条主动通道共用），别再各自为政
   try {
-    const g = await import('../lib/proactive-gate.mjs')
+    const g = await import('../lib/work/proactive-gate.mjs')
     const gate = g.allow('tattle')
     if (!gate.ok) return { ok: false, text: full, skipped: gate.why }
   } catch (e) { /* 闸门不可用就退回原逻辑 */ }
   const ok = await sendOwnerQQ(full)
   if (ok) {
     markSent(q.st)
-    try { const g = await import('../lib/proactive-gate.mjs'); g.commit('tattle') } catch (e) { /* noop */ }
+    try { const g = await import('../lib/work/proactive-gate.mjs'); g.commit('tattle') } catch (e) { /* noop */ }
   }
   return { ok, text: full }
 }

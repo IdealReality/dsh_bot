@@ -1,10 +1,10 @@
 // bili-me —— 她自己的账号台：whoami + 改签名。
 // 账号归属（10-31 笨蛋管理员拍板）：B站糖鲸理想的机械人归她运营，这是本鱼自己的号（糖鲸理想的机械人）。
 // 接口实测（10-31）：改签名走 POST /x/member/web/update（usersign 小写，整包 uname/sex/birthday）。
-import { config } from '../lib/config.mjs'
-import { loadCred } from '../lib/cred.mjs'
-import { makeHeaders } from '../lib/bili-api.mjs'
-import { swallow } from '../lib/swallow.mjs'
+import { config } from '../lib/infra/config.mjs'
+import { loadCred } from '../lib/infra/cred.mjs'
+import { makeHeaders } from '../lib/bili/bili-api.mjs'
+import { swallow } from '../lib/infra/swallow.mjs'
 
 const MY_MID = () => String(config().owner?.biliMid || config().owner?.mid || '40048138')
 

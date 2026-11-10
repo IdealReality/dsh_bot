@@ -15,8 +15,8 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { execFile } from 'node:child_process'
-import { homePath, dataPath } from '../tools/lib/paths.mjs'
-import { swallow } from '../tools/lib/swallow.mjs'
+import { homePath, dataPath } from '../tools/lib/infra/paths.mjs'
+import { swallow } from '../tools/lib/infra/swallow.mjs'
 
 const REPO = 'lmy414/ai-girl-stickers'
 const BRANCH = 'main'

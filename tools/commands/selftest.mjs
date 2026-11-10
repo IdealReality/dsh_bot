@@ -1,4 +1,4 @@
-import { gatewayBase } from '../lib/qq-gateway.mjs'
+import { gatewayBase } from '../lib/qq/qq-gateway.mjs'
 // selftest —— 启动体检：装完立刻跑这一条（bili-whale 实战里"绝大多数人卡住的地方"）。
 // 检查：配置 / 凭据 / 格式 / 登录态（真打一次 nav）/ 数据目录可写 / 熔断状态 / ffmpeg（可选）。
 // 通过后写 ~/.data/selftest-passed.json，结尾打印"接下来要做的两件事"。
@@ -8,11 +8,11 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { execFileSync } from 'node:child_process'
-import { configPath, dataPath, credentialsPath, WORK_DIR, diaryPath } from '../lib/paths.mjs'
-import { config } from '../lib/config.mjs'
-import { apiGet, makeHeaders, apiState } from '../lib/bili-api.mjs'
-import { loadCred, looksLikeJct } from '../lib/cred.mjs'
-import { swallow } from '../lib/swallow.mjs'
+import { configPath, dataPath, credentialsPath, WORK_DIR, diaryPath } from '../lib/infra/paths.mjs'
+import { config } from '../lib/infra/config.mjs'
+import { apiGet, makeHeaders, apiState } from '../lib/bili/bili-api.mjs'
+import { loadCred, looksLikeJct } from '../lib/infra/cred.mjs'
+import { swallow } from '../lib/infra/swallow.mjs'
 
 export async function run(argv = []) {
   const json = argv.includes('--json')
@@ -130,7 +130,7 @@ export async function run(argv = []) {
   // ⑬b 参考文本是否和参考音频对得上（10-26 用户报"语音和视频里反复出现同一句话"）
   // 错配时 GPT-SoVITS 会把参考文本一起念出来 —— 这条不查出来，语音听起来就像"记忆错乱"
   try {
-    const { refTextOf } = await import('../lib/tts.mjs')
+    const { refTextOf } = await import('../lib/media/tts.mjs')
     const ref = cfg.voice?.ref_audio_path || ''
     const configured = String(cfg.voice?.prompt_text || '').trim()
     const truth = refTextOf(ref)
@@ -147,7 +147,7 @@ export async function run(argv = []) {
 
   // 情绪参考段（L2）：库在不在、文件有没有丢、起伏够不够 —— 参考段就是输出的天花板
   try {
-    const { emotionRefs } = await import('../lib/tts.mjs')
+    const { emotionRefs } = await import('../lib/media/tts.mjs')
     const lib = emotionRefs()
     const keys = Object.keys(lib)
     if (!keys.length) {
@@ -164,7 +164,7 @@ export async function run(argv = []) {
   // 账本（10-26）：她自己查饭钱的那条路必须通 —— 会话日志能读、python 侧能解多帧 zstandard、
   // 缓存是新的。这条挂了，她就会退回去反复问用户"我们还有钱吗"（那就又断圈了）。
   try {
-    const L = await import('../lib/ledger.mjs')
+    const L = await import('../lib/work/ledger.mjs')
     // 10-31 审计：以前这里先查 python 存不存在，没有就直接判 ✗ —— 但账本现在有纯 Node 兜底，
     // python 缺失不再是致命项。改成：直接跑 usage()，真读不到数据才提示。
     {
@@ -187,7 +187,7 @@ export async function run(argv = []) {
   // 视频生产（第 17 轮）：真剪辑靠 ffmpeg 的 xfade/zoompan/subtitles/loudnorm + 中文字体。
   // 少一样就出不了片 —— 而这台机器上的 ffmpeg 藏在 D:/rvc/bin，PATH 里没有。
   try {
-    const V = await import('../lib/video.mjs')
+    const V = await import('../lib/media/video.mjs')
     const ff = V.ffmpegBin()
     const fps = V.specOf('bili')
     const fontOk = fs.existsSync(V.fontFile())
@@ -200,7 +200,7 @@ export async function run(argv = []) {
     else if (haveAll.length) add('视频生产', false, `这个 ffmpeg 缺滤镜：${haveAll.join('/')}，剪不出真片子`)
     else if (!fontOk) add('视频生产', true, 'ffmpeg 就绪；但没找到中文字体，字幕会变方块（配 video.font 指一个 ttf）')
     else {
-      const { locked, describe } = await import('../lib/debut.mjs')
+      const { locked, describe } = await import('../lib/self/debut.mjs')
       // 最近一条成片的音画偏差（sync.json 由 makeFilm 逐句算：配音包络对齐到成片音轨上）
       const syncNote = (() => {
         try {
@@ -220,7 +220,7 @@ export async function run(argv = []) {
 
   // B站社交流水（第 17 轮）：她要"在 B站 活着"，用户就得看得见 —— 流水文件得能读、摘要能生成。
   try {
-    const S = await import('../lib/social-log.mjs')
+    const S = await import('../lib/work/social-log.mjs')
     const recs = S.read({ days: 7 })
     const st = S.stats(recs)
     const invisible = recs.filter((r) => !r.toOwner).length

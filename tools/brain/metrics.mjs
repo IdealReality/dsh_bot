@@ -5,7 +5,7 @@
 import { readJson, writeJsonAtomic } from './json.mjs'
 import { metricsPath } from './paths.mjs'
 import { dayKey } from './clock.mjs'
-import { swallow } from '../lib/swallow.mjs'
+import { swallow } from '../lib/infra/swallow.mjs'
 
 const empty = () => ({ days: {} })
 

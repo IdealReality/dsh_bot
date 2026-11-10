@@ -12,7 +12,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { ensureDir, readJson, writeJsonAtomic, shortHash } from './json.mjs'
 import { lockPath } from './paths.mjs'
-import { swallow } from '../lib/swallow.mjs'
+import { swallow } from '../lib/infra/swallow.mjs'
 
 const sab = new Int32Array(new SharedArrayBuffer(4))
 export function sleepSync(ms) {

@@ -23,7 +23,7 @@ import path from 'node:path'
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'bot-watchlog-'))
 process.env.BOT_DATA_DIR = TMP
 
-const W = await import('../tools/lib/watchlog.mjs')
+const W = await import('../tools/lib/media/watchlog.mjs')
 
 const now = Date.now()
 const H = 3600_000

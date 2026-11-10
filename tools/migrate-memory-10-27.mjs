@@ -8,7 +8,7 @@
 // 不加 --go 只报告，不动文件（批量改记忆必须先看清单）。
 import fs from 'node:fs'
 import path from 'node:path'
-import { dataPath, homePath } from './lib/paths.mjs'
+import { dataPath, homePath } from './lib/infra/paths.mjs'
 
 const GO = process.argv.includes('--go')
 const LORE = homePath('.bot-ai', 'lore.json')

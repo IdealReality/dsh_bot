@@ -1,8 +1,8 @@
 // nav —— 登录验证 / 我是谁（唯一会真打一次 /nav 的只读命令）。
 //
 //   node bot.mjs nav
-import { apiGet, makeHeaders } from '../lib/bili-api.mjs'
-import { loadCred } from '../lib/cred.mjs'
+import { apiGet, makeHeaders } from '../lib/bili/bili-api.mjs'
+import { loadCred } from '../lib/infra/cred.mjs'
 
 export async function run() {
   const cred = loadCred()

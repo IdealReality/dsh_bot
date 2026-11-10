@@ -9,47 +9,47 @@
 import http from 'node:http'
 import fs from 'node:fs'
 import path from 'node:path'
-import { dataPath, configPath } from '../lib/paths.mjs'
-import { bootGateway, gatewayLauncher, gatewayToken } from '../lib/qq-gateway.mjs'
-import { startIdleRestart } from '../lib/selfrestart.mjs'
-import { brainHealth } from '../lib/brain-health.mjs'
-import { swallow } from '../lib/swallow.mjs'
+import { dataPath, configPath } from '../lib/infra/paths.mjs'
+import { bootGateway, gatewayLauncher, gatewayToken } from '../lib/qq/qq-gateway.mjs'
+import { startIdleRestart } from '../lib/self/selfrestart.mjs'
+import { brainHealth } from '../lib/mind/brain-health.mjs'
+import { swallow } from '../lib/infra/swallow.mjs'
 import * as neuron from '../brain/cell/neuron.mjs'
-import { splitBubbles, parseMessage } from '../lib/onebot.mjs'
-import { config } from '../lib/config.mjs'
-import { startBriefRefresher } from '../lib/ledger.mjs'
-import * as guard from '../lib/guard.mjs'
-import * as memory from '../lib/memory.mjs'
-import * as qqMemory from '../lib/qq-memory.mjs'
-import * as ownerFacts from '../lib/owner-facts.mjs'
-import * as promises from '../lib/promises.mjs'
-import * as quoteIndex from '../lib/quote.mjs'
-import { fed } from '../lib/mood.mjs'
-import * as llm from '../lib/llm.mjs'
-import { buildMessages, thinkingInstruction, addressesOwner } from '../lib/persona.mjs'
-import { gapText, mentionsDays, sanitizeDayClaims } from '../lib/timefix.mjs'
-import { splitSticker, pickSticker, FACE_FALLBACK, ensureSelfSticker, autoTag } from '../lib/stickers.mjs'
-import { makeQuoteBridge } from '../lib/qq-quote-bridge.mjs'
-import { prepareInbound, attachVision } from '../lib/qq-inbound.mjs'
-import { appendText } from '../lib/msg-content.mjs'
-import { markInbound, isStale } from '../lib/inbound-seq.mjs'
-import { makeCallApi } from '../lib/qq-call.mjs'
-import { isDuplicate } from '../lib/inbound-dedupe.mjs'
+import { splitBubbles, parseMessage } from '../lib/qq/onebot.mjs'
+import { config } from '../lib/infra/config.mjs'
+import { startBriefRefresher } from '../lib/work/ledger.mjs'
+import * as guard from '../lib/infra/guard.mjs'
+import * as memory from '../lib/mind/memory.mjs'
+import * as qqMemory from '../lib/qq/qq-memory.mjs'
+import * as ownerFacts from '../lib/mind/owner-facts.mjs'
+import * as promises from '../lib/mind/promises.mjs'
+import * as quoteIndex from '../lib/qq/quote.mjs'
+import { fed } from '../lib/mind/mood.mjs'
+import * as llm from '../lib/work/llm.mjs'
+import { buildMessages, thinkingInstruction, addressesOwner } from '../lib/self/persona.mjs'
+import { gapText, mentionsDays, sanitizeDayClaims } from '../lib/mind/timefix.mjs'
+import { splitSticker, pickSticker, FACE_FALLBACK, ensureSelfSticker, autoTag } from '../lib/media/stickers.mjs'
+import { makeQuoteBridge } from '../lib/qq/qq-quote-bridge.mjs'
+import { prepareInbound, attachVision } from '../lib/qq/qq-inbound.mjs'
+import { appendText } from '../lib/qq/msg-content.mjs'
+import { markInbound, isStale } from '../lib/qq/inbound-seq.mjs'
+import { makeCallApi } from '../lib/qq/qq-call.mjs'
+import { isDuplicate } from '../lib/qq/inbound-dedupe.mjs'
 
-import { makeStickerFollowup } from '../lib/qq-sticker-followup.mjs'
-import { synth } from '../lib/tts.mjs'
-import { parseEmotionTag, splitVoiceParts, emotionProfile, emotionMenu } from '../lib/emotion.mjs'
-import { sing } from '../lib/sing.mjs'
-import { tickMood } from '../lib/mood.mjs'
-import { generateStickerImage } from '../lib/imggen.mjs'
-import { dataUri as visionDataUri } from '../lib/vision.mjs'
-import { availableTags } from '../lib/stickers.mjs'
+import { makeStickerFollowup } from '../lib/qq/qq-sticker-followup.mjs'
+import { synth } from '../lib/media/tts.mjs'
+import { parseEmotionTag, splitVoiceParts, emotionProfile, emotionMenu } from '../lib/mind/emotion.mjs'
+import { sing } from '../lib/media/sing.mjs'
+import { tickMood } from '../lib/mind/mood.mjs'
+import { generateStickerImage } from '../lib/media/imggen.mjs'
+import { dataUri as visionDataUri } from '../lib/media/vision-api.mjs'
+import { availableTags } from '../lib/media/stickers.mjs'
 import * as brain from '../brain/index.mjs'
 import { execFile, spawnSync, spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
-import { sanitizeOutbound, sanitizeText } from '../lib/sanitize.mjs'
-import { gate as immuneGate } from '../lib/immune.mjs'
-import { gap as breathGap } from '../lib/breath.mjs'
+import { sanitizeOutbound, sanitizeText } from '../lib/qq/sanitize.mjs'
+import { gate as immuneGate } from '../lib/mind/immune.mjs'
+import { gap as breathGap } from '../lib/mind/breath.mjs'
 
 /** 项目根（起子进程时用来定位 tools/bot.mjs，不能依赖 cwd）。 */
 const BOT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
@@ -64,21 +64,21 @@ const execFileAsync = promisify(execFile)
 const LOG_FILE = dataPath('qq-server.log')
 
 // 统一通道（10-31）：QQ 消息先进这里排队 → 同会话合并、跨会话并行、先来先答（其它平台后续接同一实例）。
-import { channel as CHANNEL } from '../lib/channel.mjs'
-import * as CHANNEL_IO from '../lib/channel-io.mjs'
-import { gate as replyGate } from '../lib/reply-gate.mjs'
+import { channel as CHANNEL } from '../lib/qq/channel.mjs'
+import * as CHANNEL_IO from '../lib/qq/channel-io.mjs'
+import { gate as replyGate } from '../lib/qq/reply-gate.mjs'
 // v5：平台语义与"这次在处理谁"的上下文，从闭包变量搬出来（并发安全的根）
-import * as PLATFORMS from '../lib/platforms.mjs'
-import { current as currentCtx, runWithContext } from '../lib/reply-context.mjs'
-import { inboundTokenOk, requireInboundToken } from '../lib/inbound-auth.mjs'
-import { createPromiseExecutor, promiseOutcomePath } from '../lib/promise-executor.mjs'
-import { fill } from '../lib/persona-voice.mjs'
-import { onebotFileValue } from '../lib/onebot-file.mjs'   // 媒体段 file 必须 base64（宿主 stat 不到容器路径）
+import * as PLATFORMS from '../lib/qq/platforms.mjs'
+import { current as currentCtx, runWithContext } from '../lib/qq/reply-context.mjs'
+import { inboundTokenOk, requireInboundToken } from '../lib/qq/inbound-auth.mjs'
+import { createPromiseExecutor, promiseOutcomePath } from '../lib/mind/promise-executor.mjs'
+import { fill } from '../lib/self/persona-voice.mjs'
+import { onebotFileValue } from '../lib/qq/onebot-file.mjs'   // 媒体段 file 必须 base64（宿主 stat 不到容器路径）
 // 自我账本的镜子 (批二): 每条消息过一遍, 只记"发生了什么", 结算归 REM。
 import * as selfcon from '../brain/organ/selfcon.mjs'
-import * as roster from '../lib/roster.mjs'
-import * as bond from '../lib/bond.mjs'
-import * as webpush from '../lib/webpush.mjs'
+import * as roster from '../lib/work/roster.mjs'
+import * as bond from '../lib/mind/bond.mjs'
+import * as webpush from '../lib/work/webpush.mjs'
 
 /** 宿主是 stdio:'ignore' 起的进程，不打文件日志等于瞎 —— 出问题只能靠猜。 */
 function logLine(level, args) {
@@ -98,7 +98,7 @@ const logErr = (...a) => logLine('ERR', a)
 // 这里收敛成一个 helper，主闭包里只留一行调用，逻辑可单测。
 let _gateMod = null
 async function gateMod() {
-  if (!_gateMod) _gateMod = await import('../lib/proactive-gate.mjs')
+  if (!_gateMod) _gateMod = await import('../lib/work/proactive-gate.mjs')
   return _gateMod
 }
 /** 能不能发一条主动消息。@returns {Promise<{ok:boolean, why:string}>} */
@@ -112,12 +112,12 @@ async function spokeDone(kind = 'proactive') {
 /** 用户说话了 → 重置连续计数。顺手给 webui 主动性结账：刚才那条主动消息被接住了吗。 */
 async function ownerSpoke() {
   try { (await gateMod()).noteOwnerSpoke() } catch { /* noop */ }
-  try { const wp = await import('../lib/webpush.mjs'); wp.outcome({ replied: true }) } catch { /* 旁路 */ }
+  try { const wp = await import('../lib/work/webpush.mjs'); wp.outcome({ replied: true }) } catch { /* 旁路 */ }
 }
 
 // OneBot 消息解析已拆到 ../lib/onebot.mjs（10-31）：纯函数、可单测。
 // 这里保留 re-export，老调用方与测试不用改。
-export { splitBubbles, parseMessage } from '../lib/onebot.mjs'
+export { splitBubbles, parseMessage } from '../lib/qq/onebot.mjs'
 
 export async function run(argv = []) {
   const cfg = config()
@@ -152,7 +152,7 @@ export async function run(argv = []) {
   // 两套启动机制（im-gateway.sh / 插件 startQQ）都能拉起这个进程。
   // 谁先起谁拿锁，后来的安静退出 —— 否则 startQQ 的 killPortListeners 会杀掉守护进程，
   // 守护再拉起，形成无限拉锯（已在审计中确认这条路径存在）。
-  const { acquire } = await import('../lib/lock.mjs')
+  const { acquire } = await import('../lib/infra/lock.mjs')
   // 锁故障 failClosed 继续跑；被别人持有时让位。exit 75 = EX_TEMPFAIL：
   // 守护据此走短退避，而不是当"秒退"指数退避到 5 分钟（真崩溃时那是空窗）。
   const releaseLock = acquire('qq-server', { failClosed: true })
@@ -391,7 +391,7 @@ export async function run(argv = []) {
         try {
           const ownerQQsm = String(config().owner?.qq || '')
           if (ownerQQsm && String(userId) === ownerQQsm) {
-            const { selfmodCmd } = await import('../lib/selfmod-cmd.mjs')
+            const { selfmodCmd } = await import('../lib/self/selfmod-cmd.mjs')
             const hit = await selfmodCmd(String(text || '').trim())
             if (hit) {
               log(`[qq][selfmod] ${hit.log}`)
@@ -466,7 +466,7 @@ export async function run(argv = []) {
           // ── 学不会/没配好回落原创说唱（sing()），内容不丢
           let covered = false
           try {
-            const { coverSong, findSong, searchQuotaOk } = await import('../lib/cover.mjs')
+            const { coverSong, findSong, searchQuotaOk } = await import('../lib/media/cover.mjs')
             const hit = findSong(theme)
             const canSearch = !hit && theme && config().sing?.search !== false && searchQuotaOk()
             if (hit || canSearch) {
@@ -501,7 +501,7 @@ export async function run(argv = []) {
       // ── 连贯性器官 · 接收（2026-11-07）：解码言语行为 + 推进线程 + 调质脉冲。
       let coh = null
       try {
-        const { perceiveLogged } = await import('../lib/cohere-bridge.mjs')
+        const { perceiveLogged } = await import('../lib/mind/cohere-bridge.mjs')
         const oq = String(config().owner?.qq || '')
         coh = perceiveLogged({ platform: EVT_PLATFORM, chatId, userId, at: Date.now(), text: memText, images: imageUris.length, imageIsSticker, quote: quoteLine, merged: mergedN || 1, isGroup, atMe, isOwner: !isGroup && !!oq && String(userId) === oq }, log)
       } catch (e) { swallow(e, 'qq:cohere-perceive') }
@@ -594,8 +594,8 @@ export async function run(argv = []) {
           : 0.92
         try {
           const [IM, MB, PN, PH, VT, SP] = await Promise.all([
-            import('../lib/immune.mjs'), import('../brain/organ/metabolism.mjs'), import('../brain/organ/pain.mjs'),
-            import('../lib/llm-physio.mjs'), import('../brain/organ/vitals.mjs'),
+            import('../lib/mind/immune.mjs'), import('../brain/organ/metabolism.mjs'), import('../brain/organ/pain.mjs'),
+            import('../lib/work/llm-physio.mjs'), import('../brain/organ/vitals.mjs'),
             import('../brain/spinal.mjs'),
           ])
           // B7（2026-11-03）：表达代谢 —— 今天的直连 token 超预算会"省着点说话"
@@ -627,7 +627,7 @@ export async function run(argv = []) {
       // ── 连贯性器官 · 装配（2026-11-07）：线程/内感受/防御/表达结构进 system。
       let cohFrame = null
       try {
-        const { applyFrame } = await import('../lib/cohere-bridge.mjs')
+        const { applyFrame } = await import('../lib/mind/cohere-bridge.mjs')
         cohFrame = await applyFrame(coh, { chatId, userId, platform: EVT_PLATFORM, isGroup, at: Date.now(), messages })
         dynTemp = Math.max(0.35, Math.min(1.05, dynTemp + (cohFrame.dT || 0)))
         dynTokMul = Math.max(0.4, Math.min(1.5, dynTokMul * (cohFrame.mul || 1)))
@@ -644,7 +644,7 @@ export async function run(argv = []) {
       let chatWithTools = null
       if (toolsOn) {
         try {
-          ({ chatWithTools } = await import('../lib/agent.mjs'))
+          ({ chatWithTools } = await import('../lib/work/agent.mjs'))
           const r = await chatWithTools(messages, { temperature: dynTemp, purpose, max_tokens: Math.round((purpose === 'deep' ? 1200 : 700) * dynTokMul) })
           answer = r.text
           toolTrace = r.tools || []
@@ -657,12 +657,12 @@ export async function run(argv = []) {
         .catch((e) => { logErr('[qq] 生成失败：' + (e?.message ?? e)); return '等我一下，刚才那句没接住。' })
 
       // ── 2026-11-02 ·「先想后说」────────────────────────────────────
-      // 实现挪到 tools/lib/think.mjs：输入是（他说的话 + 她心里的念头 + 身体状态），
+      // 实现挪到 tools/lib/mind/think.mjs：输入是（他说的话 + 她心里的念头 + 身体状态），
       // 输出是一句"心里话"。它不碰 socket、不碰 OneBot —— 不属于编排层，
       // 留在 qq-server 里等于把"她想什么"和"怎么发出去"焊死在一起。
       // 顺带把 qq-server 从 1807 行拉回门禁额度以内（门禁拦得对）。
       try {
-        const { thinkThenSay } = await import('../lib/think.mjs')
+        const { thinkThenSay } = await import('../lib/mind/think.mjs')
         const r2 = await thinkThenSay({
           messages, userText, chatId, isGroup: !!isGroup, dynTemp, toolsOn, percept: coh?.percept,
           chatWithTools: toolsOn ? chatWithTools : null, llm, log,
@@ -687,7 +687,7 @@ export async function run(argv = []) {
       let out = guard.clean(answer, config())
       // ── 连贯性器官 · 复核（2026-11-07）：清洗标注 + 查答非所问/重复追问 + 必要时重写一次。
       try {
-        const { gateAndRewrite } = await import('../lib/cohere-bridge.mjs')
+        const { gateAndRewrite } = await import('../lib/mind/cohere-bridge.mjs')
         const rv = await gateAndRewrite({
           text: out, messages, temperature: dynTemp,
           chat: (m, opts) => llm.chat(m, opts), clean: (t) => guard.clean(t, config()),
@@ -900,7 +900,7 @@ export async function run(argv = []) {
         return
       }
       // ── 连贯性器官 · 回写（2026-11-07）：真发出去了才记账（干跑在上面已 return）。
-      try { (await import('../lib/cohere-bridge.mjs')).sent(chatId, plain || out, coh?.percept, { at: Date.now(), defense: cohFrame?.defense?.name }) } catch (e) { swallow(e, 'qq:cohere-sent') }
+      try { (await import('../lib/mind/cohere-bridge.mjs')).sent(chatId, plain || out, coh?.percept, { at: Date.now(), defense: cohFrame?.defense?.name }) } catch (e) { swallow(e, 'qq:cohere-sent') }
       memory.remember(EVT_PLATFORM, chatId, userId, 'assistant', plain || out, { isGroup })
       // 自我账本: 她的嘴用了没认下的候选名 = 自我使用 (受体表达的上游)。旁路。
       try { selfcon.observeSelfUse(plain || out) } catch (e) { console.error('[selfcon] observeSelfUse:', e && e.message) }
@@ -1048,7 +1048,7 @@ export async function run(argv = []) {
     // ── 脑的两条通用入口（v3 §6 S0）─────────────────────────────────
     // 别的通道（抖音私信/推送/未来的 B站）不必自己实现记忆层：POST 过来就行。
     // body: {proc,platform,chatId,userId,role,text,isGroup,scope,msgId}
-    // ── 统一通道的入站/出站（10-31）全部在 tools/lib/channel-io.mjs ─────────
+    // ── 统一通道的入站/出站（10-31）全部在 tools/lib/qq/channel-io.mjs ─────────
     if (CHANNEL_IO.handleChannelRoutes(req, res, CHANNEL, log)) return
 
     if (req.method === 'POST' && (req.url === '/event' || req.url === '/sent')) {
@@ -1103,7 +1103,7 @@ export async function run(argv = []) {
     // 群聊认人护栏自检（10-26）：启动就把三件套的状态打出来 —— 换了代码却忘了重启时，
     // 看这一行就知道跑的是哪一版，不用再猜"到底生效了没有"。
     log(`    群聊认人护栏：事实块 + 剔旧错话 + 出稿拦截 = 已启用（用户号 ${String(config().owner?.qq || '').slice(0, 3)}***）`)
-    void import('../lib/tools.mjs').then(({ CHAT_TOOLS }) => log('    可用工具：' + CHAT_TOOLS.map((t) => t.function.name).join('/'))).catch(() => {})
+    void import('../lib/work/tools.mjs').then(({ CHAT_TOOLS }) => log('    可用工具：' + CHAT_TOOLS.map((t) => t.function.name).join('/'))).catch(() => {})
     // 引用索引预热（10-27）：没有它，"他引用的是哪句"就只能回一句"我看不到"
     void (async () => {
       try {
@@ -1121,7 +1121,7 @@ export async function run(argv = []) {
       try {
         // 注意：文件名不能叫 aux.mjs —— AUX 是 Windows 的保留设备名，Win32 打开它一律报"找不到路径"，
         // 动态 import 会静默失败（aux.mjs 时代监工从没真正启动过）。
-        const { ensureBiliOwnReply, superviseAux } = await import('../lib/auxsvc.mjs')
+        const { ensureBiliOwnReply, superviseAux } = await import('../lib/work/auxsvc.mjs')
         // 抖音私信陪聊已整体移除（10-31），监工只剩 B站 自己作品评论巡检
         superviseAux()
         log('[aux] 监工已挂上：每 90s 探 B站 自己作品评论巡检')
@@ -1251,7 +1251,7 @@ export async function run(argv = []) {
     return 0
   }
 
-  // ── 承诺执行器（v5：整块逻辑抽到 tools/lib/promise-executor.mjs）──────────
+  // ── 承诺执行器（v5：整块逻辑抽到 tools/lib/mind/promise-executor.mjs）──────────
   // 这里只接线。抽出的动机：qq-server 是 1700+ 行主闭包，而这 181 行是自洽的；
   // 独立成模块后可单测，也让本文件回到规模护栏以内。
   const promiseExec = createPromiseExecutor({ runCliAsync, log, logErr })
@@ -1267,7 +1267,7 @@ export async function run(argv = []) {
       // 只有真的闲下来（rest / free / 没计划）才轮到主动搭话。
       if (cfgNow.mind?.respectBusy !== false) {
         try {
-          const M = await import('../lib/mind.mjs')
+          const M = await import('../lib/mind/mind.mjs')
           const b = M.busy()
           if (b.busy && b.activity && b.activity !== 'rest' && b.activity !== 'free') {
             return   // 她在专心，不打扰
@@ -1298,7 +1298,7 @@ export async function run(argv = []) {
       //   掷骰保留为兜底（预检失败/超时时走老路，行为不回退）。
       let smartPass = null
       try {
-        const llm = await import('../lib/llm.mjs')
+        const llm = await import('../lib/work/llm.mjs')
         const hourNow = new Date().getHours()
         const dowNow = new Date().getDay()
         const dowText = dowNow === 0 ? '周日' : dowNow === 6 ? '周六' : ['周一','周二','周三','周四','周五'][dowNow-1]
@@ -1624,7 +1624,7 @@ export async function run(argv = []) {
       // 统一规划：在专心做事时不主动插群嘴
       if (config().mind?.respectBusy !== false) {
         try {
-          const M = await import('../lib/mind.mjs')
+          const M = await import('../lib/mind/mind.mjs')
           const b = M.busy()
           if (b.busy && b.activity && b.activity !== 'rest' && b.activity !== 'free') return
         } catch (e) { swallow(e, 'qq-server:tryGroupChat') }
@@ -1719,7 +1719,7 @@ export async function run(argv = []) {
       try {
         if (Math.random() < Number(auto.imageChance ?? 0.5)) {
           const caption = String(text).replace(/[，。！？…~～\s]+/g, ' ').trim().split(' ').filter(Boolean).slice(0, 2).join(' ').slice(0, 12) || '今天的心情'
-          const { generateStickerImage } = await import('../lib/imggen.mjs')
+          const { generateStickerImage } = await import('../lib/media/imggen.mjs')
           const img = await generateStickerImage(caption, {})
           if (img) images = [onebotFileValue(img)]
         }
@@ -1751,7 +1751,7 @@ export async function run(argv = []) {
   // [beat] tryQzone -> vitals.qzone
   // 2026-11-02 绑心跳：节拍与决策在 body.mjs + heartbeat.mjs，不属于任何 IM 通道
   try {
-    const { bindBody } = await import('../lib/body.mjs')
+    const { bindBody } = await import('../lib/mind/body.mjs')
     const st = await bindBody({
       spawn, log, logErr, checkSnowluma, pollTasks, runDuePromises, warmQuoteIndex,
       tryQzone, tryProactive, tryGroupChat, brainTick,

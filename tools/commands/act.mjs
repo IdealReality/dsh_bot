@@ -7,11 +7,11 @@
 //   node bot.mjs act coin --bvid BV1xx [--num 1] [--go]
 //   node bot.mjs act pic --bvid BV1xx --message "…" --image <路径> [--go]
 //   node bot.mjs act follow --bvid BV1xx [--go]        # 关注该视频的 UP
-import * as w from '../lib/bili-write.mjs'
-import { config } from '../lib/config.mjs'
-import * as memory from '../lib/memory.mjs'
-import * as llm from '../lib/llm.mjs'
-import { swallow } from '../lib/swallow.mjs'
+import * as w from '../lib/bili/bili-write.mjs'
+import { config } from '../lib/infra/config.mjs'
+import * as memory from '../lib/mind/memory.mjs'
+import * as llm from '../lib/work/llm.mjs'
+import { swallow } from '../lib/infra/swallow.mjs'
 
 function arg(argv, name, d) { const i = argv.indexOf(name); return i >= 0 ? String(argv[i + 1] ?? d) : d }
 const has = (argv, name) => argv.includes(name)
@@ -33,13 +33,13 @@ export async function run(argv = []) {
       const rows = []
       try {
         // 2026-11-02：只要最近 24h 的，读尾部 800 行足够（原来读整个文件）
-        const { readTail } = await import('../lib/memory.mjs')
-        const lines = readTail((await import('../lib/paths.mjs')).dataPath('episodes.jsonl'), 800)
+        const { readTail } = await import('../lib/mind/memory.mjs')
+        const lines = readTail((await import('../lib/infra/paths.mjs')).dataPath('episodes.jsonl'), 800)
         const since = Date.now() - 86400_000
         for (const l of lines) { try { const r = JSON.parse(l); if (Number(r.ts ?? 0) >= since && ['bilibili', 'douyin'].includes(r.platform)) rows.push((r.platform === 'bilibili' ? 'B站' : '抖音') + '：' + String(r.summary || '').slice(0, 50)) } catch (e) { swallow(e, 'act:run') } }
       } catch (e) { swallow(e, 'act:run') }
       if (!rows.length) { console.log('最近 24 小时没看东西，今天的动态改天再发。'); return }
-      const persona = (await import('../lib/persona.mjs')).personaText()
+      const persona = (await import('../lib/self/persona.mjs')).personaText()
       const msgs = [
         { role: 'system', content: (persona ? persona.slice(0, 800) + '\n\n' : '') + '你是"理想的机械人"。基于最近看过的东西发一条B站文字动态（潜水日志），60~140字，第一人称，像随手发的朋友圈：可以提看过的视频、今天的心情、想吐槽的点。口语、真实、身份透明（是AI鱼不装人），不@任何人，不带链接。只输出动态正文。' },
         { role: 'user', content: '最近看过：\n' + rows.slice(-10).join('\n') + '\n\n写动态：' },

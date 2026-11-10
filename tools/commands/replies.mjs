@@ -8,16 +8,16 @@
 //   node bot.mjs replies [--go] [--max 3]      # ⓪①② 一次跑完
 //   node bot.mjs replies --own-only            # 只回自己作品下面的评论
 import fs from 'node:fs'
-import { scanReplies, postReply, capOk, actStats, listOwnVideos, listCommentsOf, replyVisibility } from '../lib/bili-write.mjs'
-import { config } from '../lib/config.mjs'
-import * as llm from '../lib/llm.mjs'
-import * as memory from '../lib/memory.mjs'
-import { classifyComment, replyable, stickerFallback } from '../lib/comment-kind.mjs'
-import { chooseKind, decorateText, pickCommentImage, describeKind } from '../lib/reply-style.mjs'
-import { apiGet, makeHeaders } from '../lib/bili-api.mjs'
-import { loadCred } from '../lib/cred.mjs'
-import { dataPath } from '../lib/paths.mjs'
-import { swallow } from '../lib/swallow.mjs'
+import { scanReplies, postReply, capOk, actStats, listOwnVideos, listCommentsOf, replyVisibility } from '../lib/bili/bili-write.mjs'
+import { config } from '../lib/infra/config.mjs'
+import * as llm from '../lib/work/llm.mjs'
+import * as memory from '../lib/mind/memory.mjs'
+import { classifyComment, replyable, stickerFallback } from '../lib/bili/comment-kind.mjs'
+import { chooseKind, decorateText, pickCommentImage, describeKind } from '../lib/qq/reply-style.mjs'
+import { apiGet, makeHeaders } from '../lib/bili/bili-api.mjs'
+import { loadCred } from '../lib/infra/cred.mjs'
+import { dataPath } from '../lib/infra/paths.mjs'
+import { swallow } from '../lib/infra/swallow.mjs'
 
 const STATE = dataPath('replies-state.json')
 const OWN_STATE = dataPath('bili-own-engage.json')
@@ -129,7 +129,7 @@ async function ownWorks(maxLeft, go, log = console.log) {
     const tag = n.kind === 'text' ? '' : ` 〔${n.kind === 'image' ? '图片评论' : n.kind === 'emote' ? '只有表情' : n.kind}〕`
     log(`    · ${n.uname}：${String(n.label || n.text).slice(0, 40)}${tag}`)
   }
-  const { personaText } = await import('../lib/persona.mjs')
+  const { personaText } = await import('../lib/self/persona.mjs')
   const persona = personaText()
   const idBlock = await identityBlock(news.map((n) => n.label || n.text))
   let planned = new Map()
@@ -202,7 +202,7 @@ async function ownWorks(maxLeft, go, log = console.log) {
 
 /** ② 主动出击：在最近互动过的视频评论区找人搭话。返回处理条数。 */
 async function outreach(maxLeft, go) {
-  const { personaText } = await import('../lib/persona.mjs')
+  const { personaText } = await import('../lib/self/persona.mjs')
   const persona = personaText()
   const cred = loadCred()
   const H = makeHeaders(cred)
@@ -344,7 +344,7 @@ export async function run(argv = []) {
       console.log(`  「${it.reply.uname}」：${it.reply.text.slice(0, 60)}`)
       let replyText = ''
       try {
-        const { personaText } = await import('../lib/persona.mjs')
+        const { personaText } = await import('../lib/self/persona.mjs')
         const persona = personaText()
         const idBlock = await identityBlock([it.reply.text])
         const msgs = [

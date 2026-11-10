@@ -328,7 +328,7 @@ console.log('\n[think]')
     at: Date.now(),
     dims: { da: 0.6, ne: 0.5, sero: 0.75, cortisol: 0.05, fatigue: 0.02, sleepDebt: 0.02, valence: 0.2, tension: 0 },
   }))
-  const TH = await import('../tools/lib/think.mjs')
+  const TH = await import('../tools/lib/mind/think.mjs')
   const t0 = Date.now()
   const r = await TH.introspect({ userText: '好', chatId: 'qq:think-trivial', percept: { primary: 'EMOTE' } })
   ok('表情跳过内省（skippedBy=trivial）', r.used === false && r.skippedBy === 'trivial', JSON.stringify(r))

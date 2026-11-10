@@ -40,7 +40,7 @@
 //
 // 这条区分很重要：把所有东西都塞进决策会让探活也"看她想不想"，那是荒谬的；
 // 但让它们各自跑，又回到了"八个部门"。所以：**自主进决策，体征进心跳。**
-import { swallow } from '../../lib/swallow.mjs'
+import { swallow } from '../../lib/infra/swallow.mjs'
 import * as field from '../field.mjs'
 import * as inner from '../inner.mjs'
 import * as self from './self.mjs'
@@ -49,9 +49,9 @@ import * as thalamus from './thalamus.mjs'
 import * as hpa from './hpa.mjs'
 import * as neuron from '../cell/neuron.mjs'
 import * as sleepstage from './sleepstage.mjs'
-import * as collateral from '../../lib/collateral.mjs'
-import * as immune from '../../lib/immune.mjs'
-import * as wound from '../../lib/wound.mjs'
+import * as collateral from '../../lib/mind/collateral.mjs'
+import * as immune from '../../lib/mind/immune.mjs'
+import * as wound from '../../lib/mind/wound.mjs'
 import * as pain from './pain.mjs'
 import * as anchor from '../anchor.mjs'
 import * as vitals from './vitals.mjs'   // B8 内感受：容器本身的饱胀/闷

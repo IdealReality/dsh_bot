@@ -46,7 +46,7 @@ import { readJson, mutateJson, readJsonl, appendJsonl, shortHash } from './json.
 import { segmentDir, innerStreamPath } from './paths.mjs'
 import { relTime, dayKey } from './clock.mjs'
 import path from 'node:path'
-import { swallow } from '../lib/swallow.mjs'
+import { swallow } from '../lib/infra/swallow.mjs'
 
 const HOUR = 3_600_000
 const MIN = 60_000

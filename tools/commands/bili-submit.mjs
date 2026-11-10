@@ -3,10 +3,10 @@
 // 用法：node bot.mjs bili-submit <video.mp4> --title 标题 --tid 21 --tags a,b --desc 简介 [--cover c.jpg] [--dry]
 import fs from 'node:fs'
 import path from 'node:path'
-import { loadCred } from '../lib/cred.mjs'
-import { makeHeaders } from '../lib/bili-api.mjs'
-import { swallow } from '../lib/swallow.mjs'
-import { sanitizeText } from '../lib/sanitize.mjs'
+import { loadCred } from '../lib/infra/cred.mjs'
+import { makeHeaders } from '../lib/bili/bili-api.mjs'
+import { swallow } from '../lib/infra/swallow.mjs'
+import { sanitizeText } from '../lib/qq/sanitize.mjs'
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
 /* chunk_size 由 preupload 返回值决定 */
@@ -147,7 +147,7 @@ export async function submitVideo(videoPath, opts = {}) {
   if (j?.code === 0) {
     // 跨会话记忆（10-31）：投稿成功必须进统一记忆——她要记得自己发过什么。
     try {
-      const { default: memory } = await import('../lib/memory.mjs')
+      const { default: memory } = await import('../lib/mind/memory.mjs')
       memory.remember('bilibili', 'bilibili:self', '40048138', 'assistant',
         `投稿成功：《${opts.title}》 BV${j.data.bvid}（自动投稿）`, { kind: 'post' })
     } catch (e) { swallow(e, 'bili-submit:submitVideo') }

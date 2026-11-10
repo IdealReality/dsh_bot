@@ -24,9 +24,9 @@ process.env.BOT_BRAIN_MIRROR = '0'
 let bad = 0
 const ok = (n, p, d = '') => { if (!p) bad++; console.log(`${p ? '  ✓' : '  ✗'} ${n}${d ? ' —— ' + d : ''}`) }
 
-const memory = await import('../tools/lib/memory.mjs')
+const memory = await import('../tools/lib/mind/memory.mjs')
 const paths = await import('../tools/brain/paths.mjs')
-const libPaths = await import('../tools/lib/paths.mjs')
+const libPaths = await import('../tools/lib/infra/paths.mjs')
 
 const chatId = 'qq:700001'
 const now = Date.now()

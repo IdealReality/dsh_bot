@@ -40,7 +40,7 @@
 import { readJson, mutateJson, readJsonl, appendJsonl, shortHash } from './json.mjs'
 import { innerPath, innerStreamPath } from './paths.mjs'
 import * as field from './field.mjs'
-import { swallow } from '../lib/swallow.mjs'
+import { swallow } from '../lib/infra/swallow.mjs'
 
 const HOUR = 3_600_000
 const MAX_KEEP = 60            // 常驻的活跃想法上限

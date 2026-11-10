@@ -33,7 +33,7 @@
 //      皮质醇高会拉低效价。没有这一层，各维度就只是几个独立的仪表盘。
 import { readJson, mutateJson } from './json.mjs'
 import { fieldPath } from './paths.mjs'
-import { swallow } from '../lib/swallow.mjs'
+import { swallow } from '../lib/infra/swallow.mjs'
 import * as receptor from './micro/receptor.mjs'
 // ── 器官感官接线（2026-11-03 架构修复：解 field↔organ 环）──────────────
 // 历史教训：field 曾直接 import organ/pain、organ/metabolism 来给 sense() 拼病感。

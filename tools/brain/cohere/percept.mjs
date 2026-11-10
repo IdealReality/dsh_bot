@@ -21,7 +21,7 @@
 //   ① 它在回复主链路上，每轮都跑，多一次网络往返就是多 1~3 秒延迟；
 //   ② 分类错了要有稳定行为，不能今天判成请求、明天判成闲聊；
 //   ③ 可测试 —— 截图里的原句可以直接写成断言（见 test/cohere-test.mjs）。
-import { swallow } from '../../lib/swallow.mjs'
+import { swallow } from '../../lib/infra/swallow.mjs'
 
 /** 言语行为。名字用英文常量是为了在日志/测试里可断言。 */
 export const ACT = {

@@ -8,7 +8,7 @@
 // 就 selfApply 落地（免审批：备份→写→语法→门禁，失败自动还原）。判断权在她自己身上，
 // 安全网是机制不是别人的批准。动手前先用 selfsrc 把现场看清楚。
 import fs from 'node:fs'
-import * as SM from '../lib/selfmod.mjs'
+import * as SM from '../lib/self/selfmod.mjs'
 
 export async function run(argv = []) {
   const sub = argv[0] || 'list'
@@ -51,7 +51,7 @@ export async function run(argv = []) {
 
   if (sub === 'status') {
     try {
-      const { dataPath } = await import('../lib/paths.mjs')
+      const { dataPath } = await import('../lib/infra/paths.mjs')
       const s = JSON.parse(fs.readFileSync(dataPath('selfmod.json'), 'utf8'))
       if (!s.history?.length) { console.log('还没有对自己的改动记录。'); return }
       for (const h of s.history.slice(0, 8)) {

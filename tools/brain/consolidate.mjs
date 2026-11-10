@@ -19,7 +19,7 @@ import * as selfM from './self.mjs'
 import { tryExclusive, touchLock } from './store.mjs'
 import { endOfDay, isoOf, stamp } from './clock.mjs'
 import { bump, setValue } from './metrics.mjs'
-import { swallow } from '../lib/swallow.mjs'
+import { swallow } from '../lib/infra/swallow.mjs'
 
 const doneFile = () => path.join(consDir(), 'done.jsonl')
 

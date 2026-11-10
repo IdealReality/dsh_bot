@@ -1,12 +1,12 @@
-import { gatewayBase } from '../lib/qq-gateway.mjs'
+import { gatewayBase } from '../lib/qq/qq-gateway.mjs'
 // sing —— 唱一首给用户听（命令行入口；QQ 里说"唱一首"也走同一管线）
 //   node bot.mjs sing ["主题"]                        # 原创（说唱/旋律）
 //   node bot.mjs sing cover "孙燕姿 天黑黑"           # 翻唱：搜源歌→分离→换她的声音→混伴奏
 //   node bot.mjs sing cover "天黑黑" --url <音频直链或本地路径>   # 指定源（不搜索）
 //   node bot.mjs sing songs                           # 看她学会了哪些歌（歌单）
-import { sing } from '../lib/sing.mjs'
-import { config } from '../lib/config.mjs'
-import { onebotFileValue } from '../lib/onebot-file.mjs'
+import { sing } from '../lib/media/sing.mjs'
+import { config } from '../lib/infra/config.mjs'
+import { onebotFileValue } from '../lib/qq/onebot-file.mjs'
 
 function arg(argv, name, d) { const i = argv.indexOf(name); return i >= 0 ? String(argv[i + 1] ?? d) : d }
 const has = (argv, name) => argv.includes(name)
@@ -38,7 +38,7 @@ export async function run(argv = []) {
   const sub = argv[0]
 
   if (sub === 'songs') {
-    const { listSongs } = await import('../lib/cover.mjs')
+    const { listSongs } = await import('../lib/media/cover.mjs')
     const songs = listSongs()
     console.log(`她的歌单（${songs.length} 首）：`)
     for (const s of songs) console.log(`  ${s.hasCover ? '🎤' : '⏳'} 《${s.title}》${s.hasCover ? '（会唱了）' : '（学了一半）'}`)
@@ -47,7 +47,7 @@ export async function run(argv = []) {
   }
 
   if (sub === 'cover') {
-    const { coverSong } = await import('../lib/cover.mjs')
+    const { coverSong } = await import('../lib/media/cover.mjs')
     const name = argv.slice(1).filter((a) => !a.startsWith('-') && a !== arg(argv, '--url') && a !== arg(argv, '--file')).join(' ').trim()
     const url = arg(argv, '--url')
     const file = arg(argv, '--file')

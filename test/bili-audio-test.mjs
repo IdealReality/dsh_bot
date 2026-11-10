@@ -10,7 +10,7 @@
 //      "看了但没内容"，和"没看成"分不开 —— 这是这个项目最贵的 bug 形态
 //   ④ 装没装好的判断不能误报（误报会让她每次都白等一次超时）
 import assert from 'node:assert'
-import * as BA from '../tools/lib/bili-audio.mjs'
+import * as BA from '../tools/lib/bili/bili-audio.mjs'
 
 // ── 1. 模块表面 ────────────────────────────────────────────────────────────
 assert.equal(typeof BA.hearVideo, 'function')
@@ -80,7 +80,7 @@ if (doc.ok) assert.equal(BA.asrReady(), true, 'doctor.ok=true 但 asrReady()=fal
     assert.ok(py === null || py === '/usr/bin/python3',
       `BOT_ASR_VENV 指到空处时应探测失败或回退系统 python，实际: ${py}`)
     // 源码静态扫描：不再含 '/home/feiyu/' 形态的字符串字面量
-    const src = fsmod.readFileSync(new URL('../tools/lib/bili-audio.mjs', import.meta.url), 'utf8')
+    const src = fsmod.readFileSync(new URL('../tools/lib/bili/bili-audio.mjs', import.meta.url), 'utf8')
     const hits = (src.match(/['\"`]\/home\/feiyu\//g) || []).length
     assert.equal(hits, 0, `bili-audio.mjs 又出现 ${hits} 处宿主用户硬编码字符串`)
   } finally {

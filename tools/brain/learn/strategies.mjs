@@ -23,7 +23,7 @@
 import { readJson, mutateJson } from '../json.mjs'
 import { BRAIN } from '../paths.mjs'
 import path from 'node:path'
-import { swallow } from '../../lib/swallow.mjs'
+import { swallow } from '../../lib/infra/swallow.mjs'
 import { reinforce, habituate, rewardOf, recover } from './rpe.mjs'
 
 /** 六种姿势：label 给人看，fits 是"这像我吗"（0..1，哲学层）。 */

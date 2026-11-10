@@ -7,10 +7,10 @@
 // 和 focus 的分工：focus 是「她现在在干什么」的事实记录；
 // mind 是「她怎么决定的那件事」的决策层。planner 决定后会写进 focus。
 import fs from 'node:fs'
-import { config } from '../lib/config.mjs'
-import { dataPath } from '../lib/paths.mjs'
-import { labelOf } from '../lib/focus.mjs'
-import { swallow } from '../lib/swallow.mjs'
+import { config } from '../lib/infra/config.mjs'
+import { dataPath } from '../lib/infra/paths.mjs'
+import { labelOf } from '../lib/mind/focus.mjs'
+import { swallow } from '../lib/infra/swallow.mjs'
 
 const HIST = () => dataPath('mind-history.jsonl')
 
@@ -21,7 +21,7 @@ function appendHistory(obj) {
 export async function run(argv = []) {
   const sub = String(argv[0] || 'show')
   const cfg = config()
-  const M = await import('../lib/mind.mjs')
+  const M = await import('../lib/mind/mind.mjs')
 
   if (sub === 'show' || sub === '') {
     const pcfg = cfg.mind || {}

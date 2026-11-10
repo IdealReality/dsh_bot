@@ -28,8 +28,8 @@
 // sleep.mjs 只负责派活和汇总。这样"谁做了什么、成没成"永远查得到。
 import fs from 'node:fs'
 import path from 'node:path'
-import { dataPath } from '../lib/paths.mjs'
-import { swallow } from '../lib/swallow.mjs'
+import { dataPath } from '../lib/infra/paths.mjs'
+import { swallow } from '../lib/infra/swallow.mjs'
 
 const RESULT_DIR = () => dataPath('nights')
 const resultPath = (job, stamp) => path.join(RESULT_DIR(), `${stamp}-${job}.json`)
@@ -83,7 +83,7 @@ async function jobTidy() {
   // 参数不一致就会"手动跑有效果、夜里跑没效果"，那种 bug 最难查）。
   let chatFn = null
   try {
-    const llm = await import('../lib/llm.mjs')
+    const llm = await import('../lib/work/llm.mjs')
     chatFn = (messages) => llm.chat(messages, { temperature: 0.3, max_tokens: 400, purpose: 'fast' })
   } catch (e) { swallow(e, 'nightwork:tidy:llm') }
   try {
@@ -148,7 +148,7 @@ async function jobReview() {
 
   // ③ 账本
   try {
-    const ledger = await import('../lib/ledger.mjs')
+    const ledger = await import('../lib/work/ledger.mjs')
     const rep = await ledger.report({ fresh: false })
     const over = rep.me && rep.me.overBudget
     out.push({ name: '账本审查', ok: !over, detail: '今日 ' + ((rep.me && rep.me.tokens && rep.me.tokens.total) || '?') + ' token' + (over ? '，超预算' : '，预算内') + '；可用 ' + ((rep.balance && (rep.balance.usableNow || rep.balance.total)) || '?') + ' 积分' })
@@ -166,7 +166,7 @@ async function jobOptimize(stamp) {
   // ① 归档代码
   let archive = { ok: false, why: '未尝试' }
   try {
-    const { tarGzDir, listTarGz } = await import('../lib/tar.mjs')
+    const { tarGzDir, listTarGz } = await import('../lib/infra/tar.mjs')
     const dest = dataPath('archive', `code-${stamp}.tar.gz`)
     const r = tarGzDir(ROOT, dest, {
       exclude: [/node_modules/, /\.bak[-.]/, /^\.git\//, /^test\/.*\.tmp/],

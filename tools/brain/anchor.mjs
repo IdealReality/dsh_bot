@@ -40,7 +40,7 @@
 
 import { readJson, mutateJson, readJsonl } from './json.mjs'
 import { anchorPath, innerStreamPath } from './paths.mjs'
-import { swallow } from '../lib/swallow.mjs'
+import { swallow } from '../lib/infra/swallow.mjs'
 
 const DAY = 86400_000
 

@@ -4,8 +4,8 @@
 //   node bot.mjs roster --who 123456 --call 小鱼干    # 起称呼
 //   node bot.mjs roster --who 123456 --note "爱发猫图的那位"   # 记印象
 //   node bot.mjs roster --stats
-import * as roster from '../lib/roster.mjs'
-import * as bond from '../lib/bond.mjs'
+import * as roster from '../lib/work/roster.mjs'
+import * as bond from '../lib/mind/bond.mjs'
 
 function arg(argv, name) { const i = argv.indexOf(name); return i >= 0 ? String(argv[i + 1] ?? '') : '' }
 

@@ -33,9 +33,9 @@
 //   · 状态文件走 mutateJson（brain/json.mjs 的真锁），跨进程安全。
 import fs from 'node:fs'
 import os from 'node:os'
-import { dataPath } from '../../lib/paths.mjs'
+import { dataPath } from '../../lib/infra/paths.mjs'
 import { mutateJson } from '../json.mjs'
-import { swallow } from '../../lib/swallow.mjs'
+import { swallow } from '../../lib/infra/swallow.mjs'
 
 const VITALS_PATH = () => dataPath('brain', 'meta', 'vitals.json')
 

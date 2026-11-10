@@ -4,8 +4,8 @@
 //   node bot.mjs report [--days 1] [--out <path>]
 import fs from 'node:fs'
 import path from 'node:path'
-import { dataPath } from '../lib/paths.mjs'
-import { swallow } from '../lib/swallow.mjs'
+import { dataPath } from '../lib/infra/paths.mjs'
+import { swallow } from '../lib/infra/swallow.mjs'
 
 const EP = dataPath('episodes.jsonl')
 

@@ -11,7 +11,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { classifyComment, replyable, stickerFallback, plainText } from '../tools/lib/comment-kind.mjs'
+import { classifyComment, replyable, stickerFallback, plainText } from '../tools/lib/bili/comment-kind.mjs'
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..')
 const read = (p) => fs.readFileSync(path.isAbsolute(p) ? p : path.join(ROOT, p), 'utf8')

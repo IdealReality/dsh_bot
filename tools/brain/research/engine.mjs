@@ -22,8 +22,8 @@ import {
   seedRoots, frontier, budgetLeft, addNode, addClaim, setNodeStatus, nodeById, prune, normalize, similarity,
 } from './tree.mjs'
 import { buildNotes } from './notes.mjs'
-import { extractJson } from '../../lib/jsontext.mjs'
-import { swallow } from '../../lib/swallow.mjs'
+import { extractJson } from '../../lib/infra/jsontext.mjs'
+import { swallow } from '../../lib/infra/swallow.mjs'
 
 const MAX_EXCERPT = 1400
 const MAX_CORPUS = 7000

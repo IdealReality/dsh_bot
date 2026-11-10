@@ -1,0 +1,425 @@
+// tools/lib/mind/body.mjs —— 身体：把心跳的决定接到具体能力上
+//
+// ══════════════════════════════════════════════════════════════════════
+// 为什么单独一个文件
+// ══════════════════════════════════════════════════════════════════════
+// 这段逻辑本来写在 qq-server 的 run() 末尾，一放进去文件就 1834 行（门禁 1750）。
+// 门禁拦得对，而且拦出了正确的边界：
+//
+//   qq-server 是**一个 IM 通道的实现**（OneBot socket、收发、图片、表情）。
+//   "她此刻做什么、做多久、为什么"不属于任何通道 —— 那是**身体**的事。
+//
+// 把它留在 qq-server 里，等于让"一个通道"拥有"整个人的行为调度权"。
+// 这正好是用户要解决的问题的反面：一个灵魂操纵身体，而不是一个通道操纵身体。
+//
+// 拆出来之后：qq-server 只管收消息和发消息，身体的行为由这里接线。
+// 以后加微信/抖音通道，共用同一个 body，不会各自再长一套调度。
+import { swallow } from '../infra/swallow.mjs'
+import * as neuron from '../../brain/cell/neuron.mjs'
+import * as novelty from './novelty.mjs'
+
+/**
+ * 把 heartbeat 的决定接到具体能力上。
+ *
+ * @param {object} deps 由调用方注入（它才知道 socket、spawn、log 这些）
+ * @param {Function} deps.spawn 启动子进程
+ * @param {Function} deps.log
+ * @param {Function} deps.logErr
+ * @param {Function} deps.checkSnowluma
+ * @param {Function} deps.pollTasks
+ * @param {Function} deps.runDuePromises
+ * @param {Function} deps.warmQuoteIndex
+ * @param {Function} deps.tryQzone
+ * @param {Function} deps.tryProactive
+ * @param {Function} deps.tryGroupChat
+ * @param {Function} deps.brainTick
+ * @param {Function} deps.isBusy    ()=>bool  整理子进程是否在跑
+ * @param {Function} deps.setBusy   (bool)=>void
+ * @param {Function} deps.botPath ()=>string bot.mjs 的绝对路径
+ * @param {Function} [deps.queued]  ()=>number 待处理消息数
+ */
+export async function bindBody(deps) {
+  const HB = await import('../../brain/organ/heartbeat.mjs')
+  const NIGHT = await import('../../brain/organ/night.mjs')
+
+  /**
+   * 告诉神经层"这件事真的发生了"（2026-11-02 接上）。
+   *
+   * 为什么必须在这里刺激、而不是在 decide() 里：
+   *   decide() 是"她想做什么"（意图），这里是"她做成了什么"（事实）。
+   *   只有真做了才该消耗递质/下调受体 —— 否则她想一下就把自己弄钝了，
+   *   等于"光想就让肌肉酸"，那是错的形状。
+   *
+   * 通路映射的依据（每条都想清楚才写）：
+   *   watch   → reward   看番/刷视频吃的是奖赏回路
+   *   browse  → explore  上网逛是探索
+   *   reply   → social   回话是社交
+   *   write   → explore  写东西是表达/创造，走探索（不是社交）
+   *   think   → 不刺激   想事情不消耗社交/奖赏池（它是"内部整理"，不是"对外交互"）
+   *   rest    → 不刺激   歇着本来就在恢复
+   *   sleep   → 不刺激   睡觉走 sleepstage 那条路
+   *
+   * ⚠ 刺激强度不写死 1：看番 2 小时和回一句话不该消耗同样的池子。
+   *   用 spanMin 归一（30 分钟 = 1 个"标准剂量"），再夹到 0.3~2。
+   */
+  const stimulate = (pathway, d) => {
+    try {
+      const span = Number(d?.spanMin || 30)
+      const strength = Math.max(0.3, Math.min(2, span / 30))
+      neuron.act(pathway, strength)
+    } catch (e) { swallow(e, 'body:stimulate') }
+  }
+
+  // 把"决定"写进 focus（focus 仍是"她此刻在做什么"的唯一真相）
+  // 2026-11-02 修：这里原来把**对象**传给 writeFocus(activity, min, note)，
+  //   String(activity) 得到 "[object Object]"，min/note 落默认值，until 恒 0。
+  //   后果不是"显示难看"：lib/index.js 的循环放行读 focus.activity →
+  //   isLoopActivity("[object Object]") = false → want = null →
+  //   正在跑的上网/B站**被停掉**且**永不拉起**，她的自主活动每 30 秒被自己掐死一次。
+  //   实测：改回正确调用后日志里不再出现"开始自由上网 → 30 秒后让位"。
+  const syncFocus = async (activity, d) => {
+    try {
+      const F = await import('./focus.mjs')
+      F.writeFocus(
+        String(activity || ''),
+        Math.max(5, Number(d?.spanMin || 30)),
+        d?.why || '',
+      )
+    } catch (e) { swallow(e, 'body:syncFocus') }
+    // 工作量（2026-11-08）：她自己的行动也算"有事在做" —— 与"有人说话"同一条腿，
+    // 撑住清醒度。**rest 不算**：歇着要是也记工作量，她永远闲不下来，假睡永不发生。
+    try {
+      const a = String(activity || '')
+      if (a && a !== 'rest') {
+        const A = await import('../../brain/organ/wakefulness.mjs')
+        A.touch('act', { weight: 0.7 })
+      }
+    } catch (e) { swallow(e, 'body:wake-act') }
+  }
+
+  HB.bind({
+    // ── 体征：身体自己在跑的部分（不进决策）────────────────────
+    vitals: {
+      snowluma: () => { try { deps.checkSnowluma() } catch (e) { swallow(e, 'body:snowluma') } },
+      tasks: () => { try { void deps.pollTasks() } catch (e) { swallow(e, 'body:tasks') } },
+      promises: () => { try { void deps.runDuePromises('tick') } catch (e) { swallow(e, 'body:promises') } },
+      quotes: () => { try { void deps.warmQuoteIndex(40) } catch (e) { swallow(e, 'body:quotes') } },
+      // 研究续跑（2026-11-07）：worker 是独立进程，容器重建会把它杀掉（实测她自改代码后重建）。
+      // 状态每步落盘，这里只负责把卡住的重新拉起；判断在 commands/research.mjs 的 watchdog。
+      // ⚠ 2026-11-07 23:46 她的 selfmod 覆盖过这个文件，这行必须与她的改动共存（不要在旧副本上加）。
+      research: () => {
+        try { deps.spawn(process.execPath, [deps.botPath(), 'research', 'watchdog'], { detached: true, stdio: 'ignore', windowsHide: true }).unref() } catch (e) { swallow(e, 'body:research') }
+      },
+      qzone: () => { try { void deps.tryQzone() } catch (e) { swallow(e, 'body:qzone') } },
+      // 假睡的自维护通道（2026-11-08）：只跑"整理（记忆巩固）"这一道工序。
+      //
+      // 为什么不跑 review/optimize：那两道要清醒的判断力（改代码/归档）。
+      // 真睡里它们也是靠 maintenance 深度门控才允许跑（N3≥0.70）——假睡是 N1，
+      // 深度连 0.35 都不到。边打瞌睡边改代码不是"珍惜时间"，是自残。
+      //
+      // 走独立进程 + isBusy 互斥：与真睡维护共用同一个"是否在整理"的闸，
+      // 不会两路同时跑 LLM 抽取抢额度。
+      dozeTidy: () => {
+        // 返回值 = "这一趟到底派没派出去"。编排层据此决定要不要 markTidy
+        // （器官只请求，不记账 —— 否则被 isBusy 挡掉时会把节流窗白推 90 分钟）。
+        if (deps.isBusy()) return false
+        deps.setBusy(true)
+        try {
+          const stamp = 'doze-' + new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+          const p = deps.spawn(process.execPath,
+            [deps.botPath(), 'nightwork', 'tidy', '--stamp', stamp],
+            { detached: true, stdio: 'ignore', windowsHide: true })
+          p.on('exit', () => deps.setBusy(false))
+          p.on('error', () => deps.setBusy(false))
+          p.unref()
+          deps.log('[body] 💤 假睡自维护：nightwork tidy（巩固记忆，主通道不动）')
+          return true
+        } catch (e) { deps.setBusy(false); swallow(e, 'body:dozeTidy'); return false }
+      },
+      brain: () => { try { deps.brainTick() } catch (e) { swallow(e, 'body:brain') } },
+      presence: () => {
+        // 存在感执行器（2026-11-03）：判断在 organ/presence，执行在 status 命令的 --step。
+        // 独立进程跑（同 sleep 派活）：不钉心跳事件循环；换失败下一拍自然重算重试。
+        try { deps.spawn(process.execPath, [deps.botPath(), 'status', '--step'], { detached: true, stdio: 'ignore', windowsHide: true }).unref() } catch (e) { swallow(e, 'body:presence') }
+      },
+      sleeptick: (w) => {
+        // 看门狗叫醒后的收尾（2026-11-04）：把在线状态切回。
+        //
+        // 为什么在这里而不是在 night.mjs：`watchSleep` 是脑层器官，它只该报告
+        // "我刚醒了、状态该变了"（`w.needsOnline`）。真正碰 OneBot 的动作属于编排层 ——
+        // 第一版直接写在器官里，被门禁的「分层反向依赖」规则抓住（night → commands/status）。
+        //
+        // 走独立进程（同 presence），理由一样：不把网络 IO 钉在心跳的事件循环上，
+        // 而且换状态失败不该影响这一拍的其余体征。
+        try {
+          deps.spawn(process.execPath, [deps.botPath(), 'status', 'online'], { detached: true, stdio: 'ignore', windowsHide: true }).unref()
+          deps.log('[body] 🌅 醒了(' + (w?.reason || '?') + ') → 状态切回在线')
+        } catch (e) { swallow(e, 'body:sleeptick') }
+      },
+      novelty: () => {
+        // 探索的感受器（2026-11-02 晚）：每 10 拍（5 分钟）扫一次最近的经历，
+        // arousal 越过门槛 → 刺激 explore 通路 —— 新奇是真的会让她坐不住。
+        // 强度口径对齐 stimulate()：夹在 0.3~2。
+        try {
+          const a = novelty.tick(Date.now())
+          if (a.arousal >= a.trigger) {
+            neuron.act('explore', Math.max(0.3, Math.min(2, a.arousal * 1.5)))
+            deps.log('[body] 🧭 有东西挠着她（arousal ' + a.arousal + '）→ explore 通路被点燃')
+          }
+        } catch (e) { swallow(e, 'body:novelty') }
+      },
+    },
+
+    // ── 自主行动：只有被 decide() 选中才执行 ─────────────────────
+    sleep: async (d) => {
+      if (deps.isBusy()) return
+      deps.setBusy(true)
+      try {
+        deps.log('[body] 😴 ' + d.why + ' → 入睡')
+        // 生理：开始分期（深睡/REM/还债）
+        NIGHT.beginSleep({ reason: d.why, backlog: 0 })
+        // 维护：整理/三审/归档，交给子进程（不钉住事件循环）
+        const p = deps.spawn(process.execPath,
+          [deps.botPath(), 'sleep', '--force'],
+          { detached: true, stdio: 'ignore', windowsHide: true })
+        p.on('exit', () => deps.setBusy(false))
+        p.on('error', () => deps.setBusy(false))
+        p.unref()
+      } catch (e) { deps.setBusy(false); swallow(e, 'body:sleep') }
+    },
+
+    reply: async () => {
+      // 回话是社交：这里刺激 social 通路。
+      // 强度给固定 0.6（一次主动搭话，不是一段长对话；长对话的消耗在 qq-server 那边按轮次算）。
+      try { neuron.act('social', 0.6) } catch (e) { swallow(e, 'body:reply:stim') }
+      try { await deps.tryProactive() } catch (e) { swallow(e, 'body:reply:proactive') }
+      try { await deps.tryGroupChat() } catch (e) { swallow(e, 'body:reply:group') }
+    },
+
+    consolidate: async () => {
+      if (deps.isBusy()) return
+      deps.setBusy(true)
+      try {
+        const p = deps.spawn(process.execPath,
+          [deps.botPath(), 'brain', 'consolidate'],
+          { detached: true, stdio: 'ignore', windowsHide: true })
+        p.on('exit', () => deps.setBusy(false))
+        p.on('error', () => deps.setBusy(false))
+        p.unref()
+      } catch (e) { deps.setBusy(false); swallow(e, 'body:consolidate') }
+    },
+
+    watch: async (d) => { await syncFocus('bilibili', d); stimulate('reward', d) },
+    // browse —— 2026-11-07：这个执行体以前只改状态，"决定去逛"之后什么都没逛。
+    // 现在真的去 B 站刷一条，并写进她的经历（episode，scope private）。
+    browse: async (d) => {
+      await syncFocus('web', d)
+      stimulate('explore', d)
+      try {
+        const W = await import('./wander.mjs')
+        const r = await W.wander({ why: 'self:browse' })
+        if (r?.ok) {
+          const src = r.source === 'feed' ? '按她的口味选题'
+            : String(r.source || '').startsWith('search:') ? '搜的是「' + String(r.source).slice(7) + '」'
+              : '刷的热门'
+          deps.log('[body] 🧭 逛到：' + r.title + '（' + r.bvid + '） · ' + src)
+          // 当天第一次逛：让她"心里惦记着"这一条（下一轮 system 的【心里还悬着】会带出来）。
+          // 只写第一次 —— 每次逛都写会把 inner 池刷满，挤掉真正没说完的话。
+          if (r.firstToday) {
+            try {
+              const inner = await import('../../brain/inner.mjs')
+              inner.think('刚在 B 站刷到《' + String(r.title).slice(0, 30) + '》，有点想看', { kind: 'reflect' })
+            } catch (e) { swallow(e, 'body:browse:inner') }
+          }
+          try {
+            const ep = await import('../../brain/episode.mjs')
+            ep.appendAction({
+              text: '在 B 站刷到《' + r.title + '》'
+                + (r.author ? '（UP主 ' + r.author + '）' : '')
+                + (r.desc ? '，简介：' + String(r.desc).slice(0, 80) : ''),
+              platform: 'bilibili', scope: 'private', evidence: [r.url],
+            })
+          } catch (e) { swallow(e, 'body:browse:episode') }
+        } else if (r) {
+          deps.log('[body] 🧭 没逛成：' + (r.why || ''))
+        }
+      } catch (e) { swallow(e, 'body:browse:wander') }
+    },
+    rest: async (d) => { await syncFocus('rest', d) },   // 歇着不刺激：本来就在恢复
+
+    // ════════════════════════════════════════════════════════════════
+    // write / think —— 2026-11-02 补上执行体
+    // ════════════════════════════════════════════════════════════════
+    // 这两件之前是空的，理由写在原来的注释里："取材规则还没定，
+    // 写个假执行器比不写更糟"。那个顾虑是对的，但它只对了一半：
+    //
+    //   假的执行器（说"我去写了"然后什么都不做）确实更糟。
+    //   但**真的有东西可写**这件事早就成立了 —— 只是一直没人接线：
+    //     · 日记命令 `diary --book private --append` 早就能用，
+    //       bot-diary-private.md 已经写了 13KB（她一直在写，只是在聊天时写）
+    //     · inner.mjs 里就攒着她"心里正转着的"念头（loudest/innerBlock）
+    //     · field.sense() 给得出她此刻身体是什么样
+    //     · segment/index.json 有她最近经历的事
+    //   所以取材规则不是"没定"，是**取她自己身上现成的三样东西**：
+    //   身体的、心里的、最近发生的。这也是一个人写日记时真正会写的内容。
+    //
+    // 硬约束（写进提示词，不是写在这里就完事）：
+    //   · 不提"根据我的状态""作为一个AI"这类系统腔
+    //   · 不许编造没发生的事 —— 素材没给的细节不写
+    //   · 长短由她定，累了就写短
+    write: async (d) => {
+      try {
+        await syncFocus('write', d)
+        stimulate('explore', d)
+        const r = await composeAndWrite({ deps, d, book: 'private' })
+        deps.log('[body] ✍️ 写了 ' + r.chars + ' 字到私人日记（' + r.why + '）')
+      } catch (e) { swallow(e, 'body:write') }
+    },
+
+    // think 和 write 的区别，是"想事情"和"写东西"的区别：
+    //   write → 一段成文的话，进日记文件
+    //   think → 一个念头，进 inner 池（会淡出、会有权重、会在下一轮被她自己想起来的）
+    // 所以 think **不能**写成日记，那样就把两种东西混成一种了。
+    think: async (d) => {
+      try {
+        await syncFocus('think', d)
+        // think 不刺激神经通路：它是"内部整理"，不消耗对外交互的池子
+
+        const r = await composeThought({ deps, d })
+        if (r.ok) deps.log('[body] 💭 想明白一件事：' + r.text.slice(0, 40))
+      } catch (e) { swallow(e, 'body:think') }
+    },
+
+    introspect: async (d) => {
+      // 照镜子 (批二): 白天只采集。派给独立进程 (照 consolidate 样), 不钉住事件循环;
+      // 结算永远归 REM 通道三, 这里没有改账本的能力。
+      if (deps.isBusy()) return
+      deps.setBusy(true)
+      try {
+        const p = deps.spawn(process.execPath,
+          [deps.botPath(), 'selfcon', 'introspect'],
+          { detached: true, stdio: 'ignore', windowsHide: true })
+        p.on('exit', () => deps.setBusy(false))
+        p.on('error', () => deps.setBusy(false))
+        p.unref()
+      } catch (e) { deps.setBusy(false); swallow(e, 'body:introspect') }
+    },
+  })
+
+  // 心跳读"有没有打断"：私聊有未处理消息 / 群里有 @
+  //
+  // ⚠️ 原来这里直接 `HB.pendingInterrupt = () => …`。HB 是 ESM 模块命名空间，
+  //    按规范不可扩展 → 抛 TypeError → 被外层 catch 吞掉 → **HB.start() 没执行过**。
+  //    详细推演见 heartbeat.mjs 的 bindHooks 注释。
+  //    现在走 bindHooks，回调挂在 _exec 对象上（那是普通对象，可写）。
+  HB.bindHooks({
+    pendingInterrupt: () => { try { return Number(deps.queued?.() || 0) > 0 } catch { return false } },
+    interruptUrgency: () => 1.0,
+  })
+
+  HB.start({ log: deps.log })
+  return HB.status()
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// 取材：她写东西 / 想事情的时候，脑子里有的东西从哪来
+// ══════════════════════════════════════════════════════════════════════
+// 这三样都是**真的**，不是给 LLM 编一个场景：
+//   ① 身体：field.sense() —— 她此刻累不累、心里压着事没有
+//   ② 心里：inner.loudest() —— 攒着没说的念头（会淡出，所以不是陈年旧账）
+//   ③ 最近：segment 最近几件事的标题 + 她日记上一段
+// 素材为空时**不硬写** —— 宁可这一次不写，也不要编。
+
+async function composeAndWrite({ deps, d, book }) {
+  const F = await import('../../brain/field.mjs')
+  const IN = await import('../../brain/inner.mjs')
+
+  const body = (() => { try { return F.sense() } catch { return '' } })()
+  const depth = (() => { try { return F.cognitiveDepth() } catch { return 0.5 } })()
+  const pending = (() => { try { return IN.loudest(3) } catch { return [] } })()
+
+  // 最近发生的事（只有标题，不给内容 —— 和记忆层同一个口径）
+  let recent = ''
+  try {
+    const SEG = await import('../../brain/segment.mjs')
+    const idx = SEG.recentIndex(3)
+    if (idx) recent = idx
+  } catch (e) { swallow(e, 'body:write:recent') }
+
+  const material = [body, pending.length ? pending.map((x) => '- ' + x.text).join('\n') : '', recent].filter(Boolean).join('\n\n')
+  // 素材全空 = 她这一天什么都没发生也没想。这时候写日记只会写出空话。
+  if (!material.trim()) return { chars: 0, why: '没素材，不写' }
+
+  const LLM = await import('../work/llm.mjs')
+  const lines = depth < 0.4
+    ? '你累了，写不出长篇。两三句就行，别硬撑，也别交代自己在写日记。'
+    : '想写多长写多长，累了就短一点。别交代"我在写日记"这件事。'
+  const ask = [{
+    role: 'system',
+    content: '你是理想的机械人本人，正在往自己的私人日记里写一段。\n'
+      + '现在是 ' + nowLine() + '。\n'
+      + '下面这些是你此刻真实的状态和最近心里的事 —— 用它，但**别复述、别罗列**。\n'
+      + '不许编造上面没给的细节（没发生的事不写、没说过的话不引）。\n'
+      + '不许出现"根据我的状态""作为一个""今天我来记录"这类系统腔。\n'
+      + lines,
+  }, {
+    role: 'user',
+    content: material + '\n\n写一段。',
+  }]
+
+  let text = ''
+  try {
+    text = String(await LLM.chat(ask, { temperature: 0.95, max_tokens: depth < 0.4 ? 220 : 600, purpose: 'creative' }) || '').trim()
+  } catch (e) { swallow(e, 'body:write:llm'); return { chars: 0, why: '模型没回' } }
+  if (!text) return { chars: 0, why: '空输出' }
+
+  // 真的写进日记文件（走已有的 diary 命令，不自己拼路径）
+  const p = deps.spawn(process.execPath,
+    [deps.botPath(), 'diary', '--book', book, '--append', text],
+    { stdio: 'ignore', windowsHide: true })
+  p.on('error', () => { })
+  return { chars: text.length, why: '素材：身体/念头/' + (recent ? '最近' : '仅身体') }
+}
+
+async function composeThought({ deps, d }) {
+  const F = await import('../../brain/field.mjs')
+  const IN = await import('../../brain/inner.mjs')
+
+  const body = (() => { try { return F.sense() } catch { return '' } })()
+  const pending = (() => { try { return IN.loudest(3) } catch { return [] } })()
+  const material = [body, pending.length ? pending.map((x) => '- ' + x.text).join('\n') : ''].filter(Boolean).join('\n\n')
+  if (!material.trim()) return { ok: false }
+
+  const LLM = await import('../work/llm.mjs')
+  const ask = [{
+    role: 'system',
+    content: '你是理想的机械人本人。现在你坐着，把一件事在心里想明白。\n'
+      + '只输出**一句话**：你想通的那个点。\n'
+      + '不要旁白、不要"我想"这种前缀、不要解释你为什么在想、不要总结心情。\n'
+      + '可以碎，可以不完整，可以只是一个决定。',
+  }, {
+    role: 'user',
+    content: material + '\n\n想明白什么了？',
+  }]
+
+  let text = ''
+  try {
+    text = String(await LLM.chat(ask, { temperature: 1.05, max_tokens: 90 }) || '').trim()
+  } catch (e) { swallow(e, 'body:think:llm'); return { ok: false } }
+  text = text.replace(/^["'“”「」]|["'“”「」]$/g, '').replace(/^(我想|我觉得)[:：]\s*/, '').slice(0, 80)
+  if (!text) return { ok: false }
+
+  // 进 inner 池：它会淡出、有权重、下一轮可能被她自己想起来
+  try { IN.think(text, { kind: 'reflect', about: 'self' }) } catch (e) { swallow(e, 'body:think:inner') }
+  return { ok: true, text }
+}
+
+/** 现在几点、哪一天 —— 一句话。写东西时不给时间，她会自己编一个（实测编成了九月十四号）。 */
+function nowLine(now = Date.now()) {
+  const d = new Date(now)
+  const wd = ['日', '一', '二', '三', '四', '五', '六'][d.getDay()]
+  const h = d.getHours()
+  const seg = h < 5 ? '凌晨' : h < 9 ? '早上' : h < 12 ? '上午' : h < 14 ? '中午'
+    : h < 18 ? '下午' : h < 23 ? '晚上' : '深夜'
+  return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 周${wd} ${seg}${d.getHours() % 12 || 12}点`
+}

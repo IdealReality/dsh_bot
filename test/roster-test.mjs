@@ -25,7 +25,7 @@ const ok = (name, pass, detail = '') => {
   console.log(`${pass ? '  ✓' : '  ✗'} ${name}${detail ? ' —— ' + detail : ''}`)
 }
 
-const R = await import('../tools/lib/roster.mjs')
+const R = await import('../tools/lib/work/roster.mjs')
 
 // ① 用户不入册
 ok('用户 observe 返回 null', R.observe({ platform: 'qq', userId: '111', name: '笨蛋管理员' }) === null)

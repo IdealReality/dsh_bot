@@ -18,7 +18,7 @@
 import { readJson, mutateJson } from '../json.mjs'
 import { BRAIN } from '../paths.mjs'
 import path from 'node:path'
-import { swallow } from '../../lib/swallow.mjs'
+import { swallow } from '../../lib/infra/swallow.mjs'
 import * as strat from './strategies.mjs'
 
 const LEX_FILE = () => path.join(BRAIN(), 'learn', 'lexicon.json')

@@ -14,7 +14,7 @@
 //
 // ⚠️ 这里**不做任何 LLM 调用**。复核必须是微秒级、确定性、可测的。
 //    需要重写时由编排层（qq-server）决定，用同一套消息再问一次。
-import { swallow } from '../../lib/swallow.mjs'
+import { swallow } from '../../lib/infra/swallow.mjs'
 import * as signal from './signal.mjs'
 import * as percept from './percept.mjs'
 import * as thread from './thread.mjs'

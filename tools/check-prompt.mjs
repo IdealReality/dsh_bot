@@ -1,6 +1,6 @@
 ﻿// 提示词体检：确认新增的三块（今天已经知道的事 / 你欠着的事 / 你能自己动手）真的进了 system
-import * as persona from './lib/persona.mjs'
-import * as ownerFacts from './lib/owner-facts.mjs'
+import * as persona from './lib/self/persona.mjs'
+import * as ownerFacts from './lib/mind/owner-facts.mjs'
 
 ownerFacts.learnFromOwner('我中午吃了烧鸭，撑死了')
 ownerFacts.learnFromOwner('我在改插件呢')

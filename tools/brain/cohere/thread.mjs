@@ -19,8 +19,8 @@
 // 落盘位置：~/.data/brain/cohere/<chat>.json（每会话一个，独立文件，
 // 不用全局大 JSON —— 并发写两个会话时不会互相覆盖）。
 import { readJson, mutateJson } from '../json.mjs'
-import { dataPath } from '../../lib/paths.mjs'
-import { swallow } from '../../lib/swallow.mjs'
+import { dataPath } from '../../lib/infra/paths.mjs'
+import { swallow } from '../../lib/infra/swallow.mjs'
 
 const MAX_MOVES = 8
 const MAX_Q = 6

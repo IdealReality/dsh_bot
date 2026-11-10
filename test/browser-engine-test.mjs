@@ -18,9 +18,9 @@ process.env.HOME = TMP
 fs.writeFileSync(process.env.BOT_CONFIG, JSON.stringify({}))
 
 const { DEVICES, pickDevice, guardUrl, browserRead, browserAct, browserShot, browserStatus, browserClose, browserPeek, EXTRACT_FN } =
-  await import('../tools/lib/browser.mjs')
-const { Cdp } = await import('../tools/lib/browser.mjs')
-const { dataPath } = await import('../tools/lib/paths.mjs')
+  await import('../tools/lib/media/browser-engine.mjs')
+const { Cdp } = await import('../tools/lib/media/browser-engine.mjs')
+const { dataPath } = await import('../tools/lib/infra/paths.mjs')
 
 let bad = 0
 const ok = (cond, name) => { if (cond) { console.log(`  ✓ ${name}`) } else { console.log(`  ✗ ${name}`); bad++ } }
@@ -93,7 +93,7 @@ console.log('[5] daemon 探活')
   })
   await new Promise((r) => srv.listen(0, '127.0.0.1', r))
   const port = srv.address().port
-  const { probeDaemon } = await import('../tools/lib/browser.mjs')
+  const { probeDaemon } = await import('../tools/lib/media/browser-engine.mjs')
   const daemonFile = dataPath('browser-daemon.json')   // 必须跟 browser.mjs 读的是同一个文件
   fs.mkdirSync(path.dirname(daemonFile), { recursive: true })
   fs.writeFileSync(daemonFile, JSON.stringify({ port, pid: 1, at: Date.now() }))

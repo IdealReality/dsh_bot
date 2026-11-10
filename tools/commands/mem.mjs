@@ -5,8 +5,8 @@
 //   node bot.mjs mem lore    --tag origin --text "第一次见到用户是在下雨的下午"
 //   node bot.mjs mem recall  --query "上次说想养猫"
 //   node bot.mjs mem old | stats
-import * as memory from '../lib/memory.mjs'
-import { config } from '../lib/config.mjs'
+import * as memory from '../lib/mind/memory.mjs'
+import { config } from '../lib/infra/config.mjs'
 
 function arg(argv, name) {
   const i = argv.indexOf(name)

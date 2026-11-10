@@ -15,7 +15,7 @@ const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'bot-mem-'))
 process.env.BOT_DATA_DIR = TMP
 delete process.env.BOT_DEBUG          // 避免触发"调试必须隔离"的抛错（我们本来就隔离了）
 
-const memory = await import('../tools/lib/memory.mjs')
+const memory = await import('../tools/lib/mind/memory.mjs')
 
 const readLines = (p) => {
   try { return fs.readFileSync(p, 'utf8').trim().split('\n').filter(Boolean).map((x) => JSON.parse(x)) } catch { return [] }

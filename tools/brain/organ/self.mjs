@@ -60,8 +60,8 @@ import * as inner from '../inner.mjs'
 import * as hpa from './hpa.mjs'
 import * as neuron from '../cell/neuron.mjs'
 import * as selfcon from './selfcon.mjs'
-import { swallow } from '../../lib/swallow.mjs'
-import * as llm from '../../lib/llm.mjs'
+import { swallow } from '../../lib/infra/swallow.mjs'
+import * as llm from '../../lib/work/llm.mjs'
 
 const MIN = 60_000
 const HOUR = 3_600_000
@@ -279,7 +279,7 @@ export function desire(action, ctx) {
  * @returns {Promise<string>} 她自己的说法（一句，口语）
  */
 async function leanOf({ candidates = [], ctx = {}, picked = '', llm = null, now = Date.now() } = {}) {
-  const LLM = llm || await import('../../lib/llm.mjs')
+  const LLM = llm || await import('../../lib/work/llm.mjs')
   const F = ctx.field || {}
   const sleepy = ctx.sleepy || {}
 

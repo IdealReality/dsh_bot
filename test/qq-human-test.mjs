@@ -4,7 +4,7 @@
  */
 import assert from 'node:assert/strict'
 import { splitBubbles } from '../tools/commands/qq-server.mjs'
-import { clean } from '../tools/lib/guard.mjs'
+import { clean } from '../tools/lib/infra/guard.mjs'
 
 // 1) 短短一句就是一条，不硬拆
 assert.deepEqual(splitBubbles('嗯，我在。'), ['嗯，我在。'])

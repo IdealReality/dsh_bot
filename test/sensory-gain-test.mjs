@@ -15,7 +15,7 @@ process.env.HOME = SANDBOX
 process.on('exit', () => { try { fs.rmSync(SANDBOX, { recursive: true, force: true }) } catch { /* ignore */ } })
 
 const ROOT = path.resolve(import.meta.dirname, '..')
-const { sensoryGain, applyGain, PROFILES } = await import('file:///' + path.join(ROOT, 'tools/lib/sensory-gain.mjs').replace(/\\/g, '/'))
+const { sensoryGain, applyGain, PROFILES } = await import('file:///' + path.join(ROOT, 'tools/lib/mind/sensory-gain.mjs').replace(/\\/g, '/'))
 
 const results = []
 async function ok(name, fn) {

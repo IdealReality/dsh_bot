@@ -4,7 +4,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import assert from 'node:assert'
-import { buildImagePrompt, isImageFile, genQuotaOk, genQuotaRecord, capTagFiles } from '../tools/lib/imggen.mjs'
+import { buildImagePrompt, isImageFile, genQuotaOk, genQuotaRecord, capTagFiles } from '../tools/lib/media/imggen.mjs'
 
 const STYLE = 'flat 2D anime chibi sticker illustration'
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'imggen-test-'))

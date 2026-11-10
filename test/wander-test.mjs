@@ -19,8 +19,8 @@ process.env.DSH_HOME = path.join(tmp, '.dsh')
 let bad = 0
 const ok = (n, p, d = '') => { if (!p) bad++; console.log(`${p ? '  ✓' : '  ✗'} ${n}${d ? ' —— ' + d : ''}`) }
 
-const W = await import('../tools/lib/wander.mjs')
-const B = await import('../tools/lib/bili-web.mjs')
+const W = await import('../tools/lib/mind/wander.mjs')
+const B = await import('../tools/lib/bili/bili-web.mjs')
 
 const now = Date.parse('2026-11-07T12:00:00Z')
 const todayKey = new Date(now).toISOString().slice(0, 10)

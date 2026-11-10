@@ -263,7 +263,7 @@ console.log('\n[双装配路径同源]')
   const expected = N.promptBlock({ now, hours: 72 })
   ok('注入原文非空', expected.includes('双路径注入'))
 
-  const P = await import('../tools/lib/persona.mjs')
+  const P = await import('../tools/lib/self/persona.mjs')
   const A = await import('../tools/brain/assemble.mjs')
   const pm = P.buildMessages({ platform: 'qq', userText: '在吗', chatId: 'qq:10001', userId: '10001', turnsToday: 1, isGroup: false, cohere: { cueAllowed: false, block: '' } })
   ok('persona 路径注入研究块', String(pm[0].content).includes('【我最近在琢磨的事】'))

@@ -2,8 +2,8 @@
 // 设计口径：**漏出不可接受，误伤可接受** —— 所以正例专测"该拦的拦住"，
 // 负例只测最要紧的日常数字（心跳毫秒/集数/分钟/日期），证明过滤器不把她的正常说话打碎。
 import fs from 'node:fs'
-import { dataPath } from '../tools/lib/paths.mjs'
-import { sanitizeText, sanitizeOutbound } from '../tools/lib/sanitize.mjs'
+import { dataPath } from '../tools/lib/infra/paths.mjs'
+import { sanitizeText, sanitizeOutbound } from '../tools/lib/qq/sanitize.mjs'
 
 let pass = 0
 let fail = 0

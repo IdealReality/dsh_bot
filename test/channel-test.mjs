@@ -7,7 +7,7 @@
 // 外加：TTL 丢弃、积压上限、异常不炸队列。
 import './_isolate.mjs'
 import assert from 'node:assert'
-import { UnifiedChannel } from '../tools/lib/channel.mjs'
+import { UnifiedChannel } from '../tools/lib/qq/channel.mjs'
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 const mk = (chatId, text) => ({ chatId, platform: 'qq', evt: { __text: text, message_id: 'm' + Math.random() }, at: Date.now() })
@@ -170,7 +170,7 @@ const mk = (chatId, text) => ({ chatId, platform: 'qq', evt: { __text: text, mes
 // 换成一整段纯文本，视频段消失。她收到的正文只有两句话，于是"视频我看了"
 // 全是凭空说的（日志里她甚至说"视频打不开"，因为根本没有视频可看）。
 {
-  const { synthBatch } = await import('../tools/lib/channel-io.mjs')
+  const { synthBatch } = await import('../tools/lib/qq/channel-io.mjs')
   const s = synthBatch({
     chatId: 'a', platform: 'qq',
     items: [

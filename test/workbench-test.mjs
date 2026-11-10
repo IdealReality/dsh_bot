@@ -30,8 +30,8 @@ delete process.env.USERPROFILE
 process.env.BOT_DATA_DIR = path.join(TMP, '.data')
 fs.mkdirSync(path.join(process.env.BOT_DATA_DIR, 'notes'), { recursive: true })
 
-const sb = await import('../tools/lib/sandbox.mjs')
-const wb = await import('../tools/lib/workbench.mjs')
+const sb = await import('../tools/lib/work/sandbox.mjs')
+const wb = await import('../tools/lib/work/workbench.mjs')
 
 let bad = 0
 const ok = (c, label) => { console.log((c ? '  ✓ ' : '  ✗ ') + label); if (!c) bad++ }
@@ -52,7 +52,7 @@ if (fs.existsSync(link)) ok(sb.resolvePath('.data/escape', {}).ok === false, '�
 // 只有 APP_ROOT 落在当前 HOME 之内时才谈得上「代码目录」这条规则（容器里就是这样：
 // HOME=/home/dsh，项目在 /home/dsh/plugins/dsh_bot）。测试把 HOME 换成了临时目录，
 // 所以这里只在布局吻合时校验，否则不假装通过。
-const appRel = path.relative(TMP, path.join(sb.APP_ROOT, 'tools', 'lib', 'tools.mjs'))
+const appRel = path.relative(TMP, path.join(sb.APP_ROOT, 'tools', 'lib', 'work', 'tools.mjs'))
 if (!appRel.startsWith('..')) {
   ok(sb.resolvePath(appRel, { write: true }).ok === false, '写自己的代码目录 → 拒（走 selfmod）')
 } else {

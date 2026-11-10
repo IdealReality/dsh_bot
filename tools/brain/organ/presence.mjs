@@ -28,9 +28,9 @@
 import * as field from '../field.mjs'
 import * as night from './night.mjs'
 import * as neuron from '../cell/neuron.mjs'
-import { focusSnapshot } from '../../lib/focus.mjs'
-import { dataPath } from '../../lib/paths.mjs'
-import { readJsonSafe, writeJsonAtomic } from '../../lib/atomic.mjs'
+import { focusSnapshot } from '../../lib/mind/focus.mjs'
+import { dataPath } from '../../lib/infra/paths.mjs'
+import { readJsonSafe, writeJsonAtomic } from '../../lib/infra/atomic.mjs'
 
 // ── 阈值表：全部对齐 field.sense() 的口径（一处概念，同一数字）────────
 // sense() 里 >0.45 缺觉 / >0.55 发沉 / cortisol>0.5 压着 / valence<-0.3 低。

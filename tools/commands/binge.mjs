@@ -23,16 +23,16 @@
 // 一晚看一集还是看完一整部，由她自己的兴趣和状态决定。
 import fs from 'node:fs'
 import path from 'node:path'
-import { apiGet, makeHeaders } from '../lib/bili-api.mjs'
-import { loadCred } from '../lib/cred.mjs'
-import { config } from '../lib/config.mjs'
-import { dataPath } from '../lib/paths.mjs'
-import * as memory from '../lib/memory.mjs'
-import * as promises from '../lib/promises.mjs'
-import * as jsontext from '../lib/jsontext.mjs'
-import * as watchlog from '../lib/watchlog.mjs'
+import { apiGet, makeHeaders } from '../lib/bili/bili-api.mjs'
+import { loadCred } from '../lib/infra/cred.mjs'
+import { config } from '../lib/infra/config.mjs'
+import { dataPath } from '../lib/infra/paths.mjs'
+import * as memory from '../lib/mind/memory.mjs'
+import * as promises from '../lib/mind/promises.mjs'
+import * as jsontext from '../lib/infra/jsontext.mjs'
+import * as watchlog from '../lib/media/watchlog.mjs'
 import { eat as energyEat } from '../brain/organ/metabolism.mjs'
-import { swallow } from '../lib/swallow.mjs'
+import { swallow } from '../lib/infra/swallow.mjs'
 
 const DIR = dataPath('binge')
 const arg = (argv, name) => {
@@ -202,7 +202,7 @@ async function watchOne(bvid, opt = {}) {
   // 画面是最不会骗人的一路。任何一步失败都返回 null —— 绝不编。
   let visionDesc = null
   try {
-    const BF = await import('../lib/bili-frames.mjs')
+    const BF = await import('../lib/bili/bili-frames.mjs')
     const vcfg = config()
     if (vcfg.vision?.binge !== false && BF.framesReady()) {
       const r = await BF.seeVideo(bvid, { frames: Number(vcfg.vision?.bingeFrames ?? 3) })
@@ -219,7 +219,7 @@ async function watchOne(bvid, opt = {}) {
   let dbgHear = ''
   let whyNoHear = () => ''
   try {
-    const BA = await import('../lib/bili-audio.mjs')
+    const BA = await import('../lib/bili/bili-audio.mjs')
     whyNoHear = BA.whyNoHear
     const vcfg = config()
     if (vcfg.vision?.bingeHear !== false && BA.asrReady()) {
@@ -238,8 +238,8 @@ async function watchOne(bvid, opt = {}) {
   // ③ 只根据材料写观后感（没有材料就承认没看懂 —— 绝不编剧情）
   let take = { plot: '', feel: '', via: subs.length ? '字幕轨' : '只有简介和热评', understood: false }
   try {
-    const { chat } = await import('../lib/llm.mjs')
-    const persona = await import('../lib/persona.mjs')
+    const { chat } = await import('../lib/work/llm.mjs')
+    const persona = await import('../lib/self/persona.mjs')
     const base = persona.buildMessages({ platform: 'qq', userText: '', chatId: 'qq:binge', turnsToday: 0 })
     const msgs = [
       base[0],

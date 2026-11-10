@@ -10,12 +10,12 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { execFileSync } from 'node:child_process'
-import { configPath, dataPath, credentialsPath, WORK_DIR, dshPath } from '../lib/paths.mjs'
-import { config, DEFAULTS } from '../lib/config.mjs'
-import { swallow, readSwallowed, swallowedStats } from '../lib/swallow.mjs'
-import { isOwnerChatPlatform } from '../lib/platforms.mjs'
-import { immuneSnapshot } from '../lib/immune.mjs'
-import { woundSnapshot } from '../lib/wound.mjs'
+import { configPath, dataPath, credentialsPath, WORK_DIR, dshPath } from '../lib/infra/paths.mjs'
+import { config, DEFAULTS } from '../lib/infra/config.mjs'
+import { swallow, readSwallowed, swallowedStats } from '../lib/infra/swallow.mjs'
+import { isOwnerChatPlatform } from '../lib/qq/platforms.mjs'
+import { immuneSnapshot } from '../lib/mind/immune.mjs'
+import { woundSnapshot } from '../lib/mind/wound.mjs'
 
 const ok = (n, d = '') => ({ name: n, ok: true, detail: d })
 const bad = (n, d = '') => ({ name: n, ok: false, detail: d })
@@ -147,7 +147,7 @@ export async function run(argv = []) {
 
   // 4) LLM 通道：链有几级、有没有被熔断的、推理模型是否配错
   let llmMod = null
-  try { llmMod = await import('../lib/llm.mjs') } catch (e) { swallow(e, 'diagnose:run') }
+  try { llmMod = await import('../lib/work/llm.mjs') } catch (e) { swallow(e, 'diagnose:run') }
   if (llmMod) {
     try { items.push(ok('LLM 通道', llmMod.describe())) } catch (e) { swallow(e, 'diagnose:run') }
     // B1/A2（2026-11-03）：免疫与伤口的状态进体检。
@@ -366,7 +366,7 @@ export async function run(argv = []) {
 
   // 5.7) 三条"死链路"：python / 自制贴纸 / 代码归档
   try {
-    const py = await import('../lib/python-runtime.mjs')
+    const py = await import('../lib/infra/python-runtime.mjs')
     const p = py.findPythonWith(['numpy'])
     if (!p.ok) items.push(bad('python 运行时', p.why + ' —— 语音韵律打分 / 自制表情的 python 分支都不可用'))
     else if (p.missing?.length) items.push(warn('python 运行时', p.bin + ' 可用，但缺库：' + p.missing.join(', ') + '（韵律打分将全 0 → 择优=选第一条）'))
@@ -374,7 +374,7 @@ export async function run(argv = []) {
   } catch (e) { items.push(warn('python 运行时', '检查失败：' + e.message)) }
 
   try {
-    const st = await import('../lib/stickers.mjs')
+    const st = await import('../lib/media/stickers.mjs')
     const a = st.selfStickerAvailable()
     items.push(a.ok
       ? ok('自制贴纸', '可用（via ' + a.via + '：' + String(a.detail || '').slice(0, 60) + '）')
@@ -385,13 +385,13 @@ export async function run(argv = []) {
     const { execFileSync } = await import('node:child_process')
     let hasGit = false
     try { execFileSync('git', ['--version'], { stdio: 'ignore', timeout: 5000 }); hasGit = true } catch (e) { swallow(e, 'diagnose:best-effort') }
-    const tarMod = await import('../lib/tar.mjs')
+    const tarMod = await import('../lib/infra/tar.mjs')
     items.push(ok('代码归档', hasGit ? 'git 可用（睡眠第三阶段走 git 提交）' : '容器内无 git → 睡眠归档自动走内置 tar.gz（' + (typeof tarMod.tarGzDir === 'function' ? '已就绪' : '模块缺失') + '）'))
   } catch (e) { items.push(warn('代码归档', '检查失败：' + e.message)) }
 
   // 5.8) 干跑审计：有多少"她本来要说但没说出去"的话积压着
   try {
-    const mem = await import('../lib/memory.mjs')
+    const mem = await import('../lib/mind/memory.mjs')
     const rows = mem.unsentAudit(200)
     const today = rows.filter((x) => Date.now() - Number(x.ts || 0) < 24 * 3600_000)
     if (today.length) {
@@ -403,7 +403,7 @@ export async function run(argv = []) {
 
   // 5.9) 平台开关一致性（v5：只判自己，不互相牵连）
   try {
-    const P = await import('../lib/platforms.mjs')
+    const P = await import('../lib/qq/platforms.mjs')
     const cfgP = config()
     const snap = P.snapshot(cfgP)
     const offs = snap.filter((x) => !x.on && x.dialog)

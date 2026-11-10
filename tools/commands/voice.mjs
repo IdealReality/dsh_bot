@@ -1,4 +1,4 @@
-import { gatewayBase } from '../lib/qq-gateway.mjs'
+import { gatewayBase } from '../lib/qq/qq-gateway.mjs'
 // voice —— 音色工坊：list / try / tryall / use / import
 // "她自己学新声音"的入口：从 URL 导入任意参考音频即得新音色（GPT-SoVITS v4 零样本），
 // 逐个试听发到用户 QQ，用户或鱼自己拍板切换。
@@ -11,12 +11,12 @@ import { gatewayBase } from '../lib/qq-gateway.mjs'
 import fs from 'node:fs'
 import path from 'node:path'
 import { execFileSync } from 'node:child_process'
-import { config } from '../lib/config.mjs'
-import { synth } from '../lib/tts.mjs'
-import { compactRef } from '../lib/refclean.mjs'
-import { dataPath, configPath } from '../lib/paths.mjs'
-import { swallow } from '../lib/swallow.mjs'
-import { onebotFileValue } from '../lib/onebot-file.mjs'
+import { config } from '../lib/infra/config.mjs'
+import { synth } from '../lib/media/tts.mjs'
+import { compactRef } from '../lib/qq/refclean.mjs'
+import { dataPath, configPath } from '../lib/infra/paths.mjs'
+import { swallow } from '../lib/infra/swallow.mjs'
+import { onebotFileValue } from '../lib/qq/onebot-file.mjs'
 
 // 2026-11-05 跨平台：配置优先（voice.modelsDir），默认按平台给 —— Windows 开发机 D:/，其余用户主目录
 const MODELS_DIR = config().voice?.modelsDir || (process.platform === 'win32' ? 'D:/GPT-SoVITS/models' : (process.env.USERPROFILE || process.env.HOME || '') + '/GPT-SoVITS/models')
@@ -60,7 +60,7 @@ export async function run(argv = []) {
   const voices = listVoices()
 
   if (sub === 'models') {
-    const rvc = await import('../lib/rvc.mjs')
+    const rvc = await import('../lib/media/rvc.mjs')
     const { current, models } = rvc.listVoiceModels()
     const names = Object.keys(models)
     console.log(`RVC 音色模型（她自己的声音，唱歌/换声用）共 ${names.length} 个：`)
@@ -70,7 +70,7 @@ export async function run(argv = []) {
   }
 
   if (sub === 'train') {
-    const rvc = await import('../lib/rvc.mjs')
+    const rvc = await import('../lib/media/rvc.mjs')
     const name = arg(argv, '--name', 'bot-sunshine')
     const epochs = Number(arg(argv, '--epochs', 150)) || 150
     const batch = Number(arg(argv, '--batch', 8)) || 8
@@ -107,7 +107,7 @@ export async function run(argv = []) {
   }
 
   if (sub === 'use-model') {
-    const rvc = await import('../lib/rvc.mjs')
+    const rvc = await import('../lib/media/rvc.mjs')
     rvc.setCurrentVoice(arg(argv, '--name'))
     console.log(`✓ 唱歌音色已切到「${arg(argv, '--name')}」`)
     return
@@ -260,9 +260,9 @@ export async function run(argv = []) {
     // 情绪参考音色库（L2）：参考音频的起伏就是输出的天花板 —— 实测 yinlang（起伏 4.78）带出来的
     // 语音 4.82；sunshine_girl（3.45）带出来只有 2.83。所以要给每种情绪准备一段"她自己的声音 +
     // 有情绪的韵律"当参考。做法：用同一句话多合几条（温度调高），按韵律分挑最活的那条存下来。
-    const { EMOTIONS, emotionProfile } = await import('../lib/emotion.mjs')
-    const { scoreWavs } = await import('../lib/prosody.mjs')
-    const tts = await import('../lib/tts.mjs')
+    const { EMOTIONS, emotionProfile } = await import('../lib/mind/emotion.mjs')
+    const { scoreWavs } = await import('../lib/media/prosody.mjs')
+    const tts = await import('../lib/media/tts.mjs')
     const act = argv[1] || 'list'
     const EMO_DIR = tts.EMO_DIR()
     const MANIFEST = tts.EMO_MANIFEST()

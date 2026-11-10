@@ -25,8 +25,8 @@ const cfgPath = path.join(TMP, 'bot.config.json')
 fs.writeFileSync(cfgPath, JSON.stringify({ identity: { name: '理想的机械人', ownerTitle: '用户', selfClaim: '我' }, llm: { api_key: 'x' } }))
 process.env.BOT_CONFIG = cfgPath
 
-const SK = await import('../tools/lib/skipped-messages.mjs')
-const persona = await import('../tools/lib/persona.mjs')
+const SK = await import('../tools/lib/qq/skipped-messages.mjs')
+const persona = await import('../tools/lib/self/persona.mjs')
 
 let pass = 0
 const ok = (name, fn) => {

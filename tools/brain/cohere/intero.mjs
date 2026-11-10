@@ -21,7 +21,7 @@
 // 所以这里会有一小部分概率把"累"读成"烦"、把"空"读成"没意思"。
 // 这是刻意的：一个永远准确知道自己状态的系统，不是人，是仪表盘。
 // （比例固定、可复现 —— 用时间的确定性哈希，不用 Math.random，测试才稳。）
-import { swallow } from '../../lib/swallow.mjs'
+import { swallow } from '../../lib/infra/swallow.mjs'
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v))
 

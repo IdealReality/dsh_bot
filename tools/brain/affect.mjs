@@ -7,7 +7,7 @@
 //   3. 只有**兑现**给奖励（多巴胺），"嘴上答应"不给 —— 这是治空口承诺的根。
 import { readJson, mutateJson } from './json.mjs'
 import { affectPath } from './paths.mjs'
-import { swallow } from '../lib/swallow.mjs'
+import { swallow } from '../lib/infra/swallow.mjs'
 
 const empty = () => ({ valence: 0, arousal: 0.3, tension: 0, updatedAt: 0, log: [] })
 

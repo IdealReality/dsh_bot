@@ -26,7 +26,7 @@ const ok = (name, pass, detail = '') => {
 }
 
 // 动态 import：必须在 env 沙箱设好之后（lib/paths.mjs 在 import 时缓存 HOME）
-const { tryAcquire, acquire } = await import(pathToFileURL(path.join(APP, 'tools/lib/lock.mjs')).href)
+const { tryAcquire, acquire } = await import(pathToFileURL(path.join(APP, 'tools/lib/infra/lock.mjs')).href)
 const lockPath = (name) => path.join(tmp, 'locks', name + '.lock')
 
 try {
@@ -63,7 +63,7 @@ const os = require('node:os')
 const tmp2 = fs.mkdtempSync(path.join(os.tmpdir(), 'bot-lock-broken-'))
 fs.writeFileSync(path.join(tmp2, 'locks'), 'file where dir should be')
 process.env.BOT_DATA_DIR = tmp2; process.env.USERPROFILE = tmp2; process.env.HOME = tmp2
-import(${JSON.stringify(pathToFileURL(path.join(APP, 'tools/lib/lock.mjs')).href)}).then(({ acquire }) => {
+import(${JSON.stringify(pathToFileURL(path.join(APP, 'tools/lib/infra/lock.mjs')).href)}).then(({ acquire }) => {
   const a = acquire('x')                 // 默认 failOpen
   const b = acquire('y', { failClosed: true })
   console.log(JSON.stringify({ aNull: a === null, bFn: typeof b === 'function' }))
@@ -90,7 +90,7 @@ process.env.BOT_DATA_DIR = ${JSON.stringify(tmp)}
 process.env.USERPROFILE = ${JSON.stringify(tmp)}
 process.env.HOME = ${JSON.stringify(tmp)}
 process.env.DSH_HOME = ${JSON.stringify(path.join(tmp, '.dsh'))}
-const { tryAcquire } = await import(${JSON.stringify(pathToFileURL(path.join(APP, 'tools/lib/lock.mjs')).href)})
+const { tryAcquire } = await import(${JSON.stringify(pathToFileURL(path.join(APP, 'tools/lib/infra/lock.mjs')).href)})
 const r = tryAcquire('race')
 if (r.acquired) { await new Promise((res) => setTimeout(res, 500)); console.log('WON') }
 else console.log('LOST')

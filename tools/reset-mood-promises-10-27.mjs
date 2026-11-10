@@ -8,7 +8,7 @@
 //
 //   node tools/reset-mood-promises-10-27.mjs [--go]
 import fs from 'node:fs'
-import { dataPath } from './lib/paths.mjs'
+import { dataPath } from './lib/infra/paths.mjs'
 
 const GO = process.argv.includes('--go')
 const today = new Date().toLocaleDateString('sv-SE')

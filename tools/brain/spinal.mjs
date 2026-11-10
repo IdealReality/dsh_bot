@@ -10,7 +10,7 @@
 //   sp.sources      哪些器官在发声（diagnose 自检用）
 //
 // 器官缺席/异常永远不炸：每个读数独立 try，坏了就当没意见（llmState 家族契约）。
-import { swallow } from '../lib/swallow.mjs'
+import { swallow } from '../lib/infra/swallow.mjs'
 import { sleepPressure } from './rhythm.mjs'
 import * as sleepstage from './organ/sleepstage.mjs'
 import { voiceReadiness, cognitiveDepth, patience, irritability } from './field.mjs'

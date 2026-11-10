@@ -5,10 +5,10 @@
 //   node bot.mjs quota record --type share --target BV1xxxx --note "…"
 //   node bot.mjs quota show
 import fs from 'node:fs'
-import { dataPath } from '../lib/paths.mjs'
-import { config } from '../lib/config.mjs'
-import { updateJson, readJsonSafe } from '../lib/atomic.mjs'
-import { swallow } from '../lib/swallow.mjs'
+import { dataPath } from '../lib/infra/paths.mjs'
+import { config } from '../lib/infra/config.mjs'
+import { updateJson, readJsonSafe } from '../lib/infra/atomic.mjs'
+import { swallow } from '../lib/infra/swallow.mjs'
 
 const QUOTA_FILE = dataPath('quota.json')
 const dayOf = (v = Date.now()) => new Date(v).toLocaleDateString('sv-SE')

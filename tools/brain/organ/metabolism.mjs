@@ -16,9 +16,9 @@
 //   · 清醒 = 净基础消耗（极慢，防止无限耗尽靠的是夜里回满）
 // 措辞（M58 主观红线）：饿是第一人称的「脑子转不动」，积压是「脑子里堆着没消化的东西」。
 import fs from 'node:fs'
-import { dataPath } from '../../lib/paths.mjs'
-import { swallow } from '../../lib/swallow.mjs'
-import { updateJson, readJsonSafe } from '../../lib/atomic.mjs'
+import { dataPath } from '../../lib/infra/paths.mjs'
+import { swallow } from '../../lib/infra/swallow.mjs'
+import { updateJson, readJsonSafe } from '../../lib/infra/atomic.mjs'
 import * as sleepstage from './sleepstage.mjs'
 
 const STATE_FILE = () => dataPath('metabolism.json')

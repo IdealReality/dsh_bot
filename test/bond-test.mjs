@@ -27,8 +27,8 @@ const NOW = Date.now()
 const H = 3600_000
 const M = 60_000
 
-const B = await import('../tools/lib/bond.mjs')
-const MOOD = await import('../tools/lib/mood.mjs')
+const B = await import('../tools/lib/mind/bond.mjs')
+const MOOD = await import('../tools/lib/mind/mood.mjs')
 
 // ① 用户不入册
 ok('用户 taste 不产生记录', B.taste({ platform: 'qq', userId: '111', text: '谢谢宝贝' }) === 0)

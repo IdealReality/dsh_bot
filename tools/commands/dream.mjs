@@ -2,10 +2,10 @@
 // 边界：梦可凭空捏造/大胆/黑暗，绝不与真实记忆混淆（三层隔离）。
 import fs from 'node:fs'
 import path from 'node:path'
-import { dataPath } from '../lib/paths.mjs'
-import { config } from '../lib/config.mjs'
+import { dataPath } from '../lib/infra/paths.mjs'
+import { config } from '../lib/infra/config.mjs'
 import { readJsonl } from '../brain/json.mjs'
-import { swallow } from '../lib/swallow.mjs'
+import { swallow } from '../lib/infra/swallow.mjs'
 
 const DREAMS = () => dataPath('dreams.jsonl')
 const NL = String.fromCharCode(10)
@@ -23,7 +23,7 @@ function appendDream(d) {
   fs.appendFileSync(DREAMS(), JSON.stringify({ dream: true, isFake: true, ...d }) + NL)
 }
 // 读取端已提到 lib 层（10-31）：这里只做 re-export，保证老调用方不受影响。
-export { recentDreams, dreamToMention } from '../lib/dream-read.mjs'
+export { recentDreams, dreamToMention } from '../lib/mind/dream-read.mjs'
 
 /**
  * 梦的种子：**真实骨架 + 随机血肉**（2026-11-02 重写）
@@ -195,7 +195,7 @@ const DREAM_SYS = [
 ].join(NL)
 
 async function compose(seedTexts, purity = '') {
-  const llm = await import('../lib/llm.mjs')
+  const llm = await import('../lib/work/llm.mjs')
   const user = seedTexts.length
     ? '昨晚的碎片（可能跟今晚的梦没关系，随便用/不用/反着用）：' + NL
       + seedTexts.map((s) => '- ' + s).join(NL)
@@ -346,7 +346,7 @@ export async function dreamTrpg(o = {}) {
   const seedSrc = o.seeds || await seeds(now)
   const picked = pickSeeds(seedSrc)
   const chosen = picked.chosen
-  const llm = o.llm || await import('../lib/llm.mjs')
+  const llm = o.llm || await import('../lib/work/llm.mjs')
 
   // ══════════════════════════════════════════════════════════════════
   // 素材怎么说给模型听（2026-11-02 第三版）

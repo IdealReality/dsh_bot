@@ -22,7 +22,7 @@ if (!process.env.BOT_ASR_DATA_DIR && fs.existsSync('/home/dsh/.data/asr-venv/bin
 process.on('exit', () => { try { fs.rmSync(SANDBOX, { recursive: true, force: true }) } catch { /* ignore */ } })
 
 const ROOT = path.resolve(import.meta.dirname, '..')
-const { watchMedia } = await import('file:///' + path.join(ROOT, 'tools/lib/watch.mjs').replace(/\\/g, '/'))
+const { watchMedia } = await import('file:///' + path.join(ROOT, 'tools/lib/media/watch.mjs').replace(/\\/g, '/'))
 
 const hasFfmpeg = (() => { try { execFileSync('ffmpeg', ['-version'], { stdio: 'ignore', timeout: 5000 }); return true } catch { return false } })()
 if (!hasFfmpeg) { console.log('watch-av ✓ 跳过（这台机器没有 ffmpeg）'); process.exit(0) }
@@ -229,7 +229,7 @@ await ok('声音纹理：掌声要认成掌声/密集响声，不是"有声音�
 {
   const FACE = '/home/dsh/.data/stickers/设定图/new-issue-08-001.png'
   let ready = false
-  const { facesReady } = await import('file:///' + path.join(ROOT, 'tools/lib/retina.mjs').replace(/\\/g, '/'))
+  const { facesReady } = await import('file:///' + path.join(ROOT, 'tools/lib/media/retina.mjs').replace(/\\/g, '/'))
   try { ready = facesReady() && fs.existsSync(FACE) } catch { ready = false }
   if (ready) {
     const say = path.join(dir, 'spk.wav')

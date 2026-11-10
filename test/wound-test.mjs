@@ -17,7 +17,7 @@ process.env.USERPROFILE = TMP
 process.env.HOME = TMP
 process.env.DSH_HOME = path.join(TMP, '.dsh')
 
-const { register, tick, closeIfHealed, woundSnapshot } = await import('../tools/lib/wound.mjs')
+const { register, tick, closeIfHealed, woundSnapshot } = await import('../tools/lib/mind/wound.mjs')
 
 // ── ① 登记 + 幂等 ──
 {

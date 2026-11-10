@@ -21,8 +21,8 @@ fs.writeFileSync(process.env.BOT_CONFIG, JSON.stringify({
   qq: { enabled: true },
 }))
 
-const cf = await import('../tools/lib/config-file.mjs')
-const { DEFAULTS } = await import('../tools/lib/config.mjs')
+const cf = await import('../tools/lib/infra/config-file.mjs')
+const { DEFAULTS } = await import('../tools/lib/infra/config.mjs')
 
 // ── 1. 读：必须补全默认值 ───────────────────────────────────────────────────
 const cfg = cf.readConfigFile()
@@ -84,7 +84,7 @@ assert.equal('__hasUserFile' in after3, false, '__ 开头的内部标记不许�
 {
   // 先把配置文件清成"很薄"的一份，避免上一段写进去的 dryRun=false 干扰判定
   fs.writeFileSync(process.env.BOT_CONFIG, JSON.stringify({ qq: { enabled: true } }))
-  const { config, DEFAULTS } = await import('../tools/lib/config.mjs')
+  const { config, DEFAULTS } = await import('../tools/lib/infra/config.mjs')
   const c = config()
   assert.notEqual(c.guard, DEFAULTS.guard, 'config() 与 DEFAULTS 不许共享嵌套对象')
   assert.notEqual(c.qq, DEFAULTS.qq)

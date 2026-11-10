@@ -17,7 +17,7 @@ process.env.BOT_BRAIN_MIRROR = '0'
 
 // swallow 也动态取（env 已就位）；event/episode/clock/recall/paths 由下方原有
 // 代码动态 import —— 它们现在天然落在 env 沙箱之后，顺序正确。
-const { swallow } = await import('../tools/lib/swallow.mjs')
+const { swallow } = await import('../tools/lib/infra/swallow.mjs')
 
 let bad = 0
 const ok = (name, pass, detail = '') => {

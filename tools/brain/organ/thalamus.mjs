@@ -39,7 +39,7 @@ import { readJson, mutateJson } from '../json.mjs'
 import { thalamusPath } from '../paths.mjs'
 import * as field from '../field.mjs'
 import * as neuron from '../cell/neuron.mjs'
-import { swallow } from '../../lib/swallow.mjs'
+import { swallow } from '../../lib/infra/swallow.mjs'
 
 const MIN = 60_000
 

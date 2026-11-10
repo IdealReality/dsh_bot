@@ -7,12 +7,12 @@
 // 触发：qq-server 的 tick 里，跟 tryProactive 并行。频率独立控制。
 // 全程她自己的选择，不是脚本指定。
 import fs from 'node:fs'
-import { config } from '../lib/config.mjs'
-import { fill } from '../lib/persona-voice.mjs'
-import { dataPath } from '../lib/paths.mjs'
+import { config } from '../lib/infra/config.mjs'
+import { fill } from '../lib/self/persona-voice.mjs'
+import { dataPath } from '../lib/infra/paths.mjs'
 import { readJsonl } from '../brain/json.mjs'
-import { swallow } from '../lib/swallow.mjs'
-import * as novelty from '../lib/novelty.mjs'
+import { swallow } from '../lib/infra/swallow.mjs'
+import * as novelty from '../lib/mind/novelty.mjs'
 
 /**
  * 本插件的命令行入口（tools/bot.mjs）的绝对路径。
@@ -77,7 +77,7 @@ function gatherMaterial() {
 export async function wander() {
   const cfg = config()
   const material = gatherMaterial()
-  const llm = await import('../lib/llm.mjs')
+  const llm = await import('../lib/work/llm.mjs')
 
   const sys = [
     fill('你是{name}，一只鲸鱼娘，住在{owner}的电脑里。你有很多能力（看B站视频/上网/写日记/做表情包/发动态/写代码）。现在没人给你指令——你自己想想：接下来想做什么？'),
@@ -124,7 +124,7 @@ export async function doWander() {
   if (Number(st.count ?? 0) >= max) return null
   let gapMin = Number(wf.minGapMin ?? 180)
   try {
-    const nv = await import('../lib/novelty.mjs')
+    const nv = await import('../lib/mind/novelty.mjs')
     const a = nv.assess(Date.now())
     gapMin = Math.max(60, Math.round(gapMin * (1 - Math.min(0.85, a.arousal))))
   } catch (e) { swallow(e, 'tools/commands/wander.mjs:gate') }
@@ -157,7 +157,7 @@ export async function doWander() {
 
   try {
     // 10-31 审计：原来是 './memory.mjs'（commands/ 下没有这个文件）—— 自主探索的记忆从没写进去过
-    const memory = await import('../lib/memory.mjs')
+    const memory = await import('../lib/mind/memory.mjs')
     memory.remember('web', 'wander', 'self', 'assistant',
       `自主探索：${idea.want}（${idea.reason}）→ ${results.map(r => r.ok ? '✓' : '✗').join('')}`,
       { kind: 'wander' })
@@ -192,7 +192,7 @@ export async function doWander() {
  */
 export async function settleExploration(idea, results) {
   const out = { surprise: 0, interest: false }
-  const nv = await import('../lib/novelty.mjs')
+  const nv = await import('../lib/mind/novelty.mjs')
   try {
     const allOk = Array.isArray(results) && results.length > 0 && results.every((r) => r.ok)
     const got = (results || []).map((r) => String(r.out || '')).join(' ')
@@ -200,7 +200,7 @@ export async function settleExploration(idea, results) {
     nv.spark(String(idea?.want || '') + ' ' + String(idea?.reason || ''), { source: 'wander', surprise: out.surprise })
     if (allOk && out.surprise >= 0.5) {
       try {
-        const memory = await import('../lib/memory.mjs')
+        const memory = await import('../lib/mind/memory.mjs')
         memory.addLore('兴趣', '最近对 ' + String(idea?.want || '').slice(0, 40) + ' 上了心（探索收获很大）')
         out.interest = true
       } catch (e) { swallow(e, 'wander:settle:lore') }
