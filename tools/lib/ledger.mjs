@@ -473,9 +473,18 @@ export function readBrief() {
  * 立刻刷一版，然后每 minutes 分钟刷一版。返回 unref 过的 timer，不挡进程退出。
  */
 export function startBriefRefresher(minutes = 10, log = () => {}) {
+  let lastLine = ''
   const go = () => {
     refreshBrief()
-      .then((p) => { if (p) log('账本已刷新：' + p.line.slice(0, 90)) })
+      .then((p) => {
+        if (!p) return
+        // 2026-11-11：额度没变就不打。实测 24h 日志 162 行里 144 行是同一句
+        // 「账本已刷新」，占了 89%，把真事件全压下去了。
+        const line = String(p.line || '')
+        if (line === lastLine) return
+        lastLine = line
+        log('账本已刷新：' + line.slice(0, 90))
+      })
       .catch(() => {})
   }
   go()

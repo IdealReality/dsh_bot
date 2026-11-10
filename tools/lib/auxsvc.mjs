@@ -31,6 +31,26 @@ function say(line) {
   } catch (e) { swallow(e, 'auxsvc:say') }
 }
 
+/**
+ * 同一句告警在冷却期内只打一次（2026-11-11）。
+ * 病根：B站 号被审核时，每 12 分钟一轮巡检都输出同一句「3 条仅自己可见」，
+ * 实测 2 周里刷了上千行，真正的状态变化被淹没。判据取前 60 字，避免尾差导致失效。
+ */
+const WARN_FILE = () => dataPath('aux-warn-state.json')
+function sayDedup(line, cooldownMs = 24 * 3600_000) {
+  const key = String(line).slice(0, 60)
+  try {
+    const st = JSON.parse(fs.readFileSync(WARN_FILE(), 'utf8'))
+    if (st?.key === key && Date.now() - Number(st.at || 0) < cooldownMs) return false
+  } catch { /* 没有状态文件 = 第一次 */ }
+  say(line)
+  try {
+    fs.mkdirSync(path.dirname(WARN_FILE()), { recursive: true })
+    fs.writeFileSync(WARN_FILE(), JSON.stringify({ key, at: Date.now() }))
+  } catch (e) { swallow(e, 'auxsvc:warnState') }
+  return true
+}
+
 /** 端口上到底活没活（HTTP /health 优先，退化成 TCP 探测）。 */
 export async function probeHealth(port, timeoutMs = 2500) {
   try {
@@ -89,7 +109,7 @@ export async function ensureBiliOwnReply({ everyMin = 0 } = {}) {
     })
     lastOwnScan.at = Date.now()
     const interesting = out.split('\n').filter((l) => /已回复|回评失败|新评论|⛔|⚠|自己作品/.test(l)).slice(0, 6).join(' | ')
-    if (interesting) say(`B站 自己作品巡检：${interesting}`)
+    if (interesting) sayDedup(`B站 自己作品巡检：${interesting}`)
     return { ran: true, out: interesting }
   } finally {
     lastOwnScan.running = false
