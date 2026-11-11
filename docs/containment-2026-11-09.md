@@ -31,7 +31,7 @@
 第 3 道  DSH_BOT_ISO 容器 → 内网 / 公网      内网全 DROP + 公网 ipset 白名单（今天新增）
 ```
 
-### 2.1 容器能碰宿主的端口，只剩四个
+### 2.1 容器能碰宿主的端口，只剩五个
 
 白名单不是拍脑袋列的，是从 `bot.config.json` 里抄的**她真正在用**的端点：
 
@@ -41,11 +41,12 @@
 | 3066 | LLM / vision 代理 | `llm.base_url`、`vision.base_url` |
 | 3070 | dsh-bot-browser | `BOT_BROWSER_URL` 默认值 |
 | 9880 | GPT-SoVITS TTS | `voice.sovits_url` |
+| 8304 | 余额反代（nginx `/balance`） | `ledger.balanceUrl`（2026-11-11 加） |
 
 实测（容器内 TCP 连接）：
 
 ```
-172.17.0.1:3010/3066/3070/9880 → OPEN
+172.17.0.1:3010/3066/3070/9880/8304 → OPEN
 192.168.5.2:3000/80/443/22/3100/47984 → timeout（不是 refused —— 连"这个端口有人"都不告诉）
 172.17.0.1:7890（Clash 开放代理）/8080（vaultwarden）→ timeout
 ```

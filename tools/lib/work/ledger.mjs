@@ -10,7 +10,7 @@
 //   ② 饭钱折算：token × 单价（config.ledger.price，默认按 DeepSeek 档位估，标 ≈）
 //   ③ 动作额度：她自己那几本账（quota.json / bili-actions.json / douyin-*.json / imggen.json）
 //
-// 余额（官方钱包）走可选接口：config.ledger.balanceUrl + apiKey 配了才查，
+// 余额（网关钱包）走可选接口：config.ledger.balanceUrl 配了才查（本地反代免 key），
 // 查不到就明确说"看不到余额"，绝不编一个 0（宁可让她去问用户，也不能骗她）。
 import { execFile, execFileSync } from 'node:child_process'
 import fs from 'node:fs'
@@ -250,16 +250,22 @@ export function quotas(cfg = config(), today = dayKey(), dir = dataPath()) {
 }
 
 /**
- * 可选：官方钱包余额（配了 url+key 才查，其它一律返回 null，不编数字）。
+ * 可选：余额（配了 balanceUrl 才查，其它一律返回 null，不编数字）。
  *
+ * 两种来源，优先级：balanceFile（本地快照）> balanceUrl（HTTP）。
+ * 2026-11-11 起生产配置走 HTTP：http://172.17.0.1:8304/balance —— 宿主 nginx 反代
+ * 直接暴露额度聚合器的快照（每 5 分钟原子写）。这样余额和模型通道走同一张网：
+ * 网关后面加渠道，聚合器自动把新号算进来，她这边一行配置都不用动。
+ *
+ * 本地端点免 key（只在内网/容器网段监听）；公网官方 API 仍要 key，没配就不查。
  * 口径照 dsh-pet 的教训：`balance_infos` 里**所有币种都要留下** ——
  * 只取首条会让后面的币种凭空消失（余额看起来比实际少）。金额原样透传，
  * 不按"赠送+充值"重算（官方给的 total 就是总数）。
  */
 export async function balance(cfg = config(), opts = {}) {
   const url = cfg.ledger?.balanceUrl
+  if (!url) return null
   const key = cfg.ledger?.apiKey || process.env.DEEPSEEK_API_KEY
-  if (!url || !key) return null
   const timeoutMs = Number(cfg.ledger?.balanceTimeoutMs ?? 8000)
   const ctrl = new AbortController()
   const timer = setTimeout(() => ctrl.abort(), timeoutMs)
@@ -282,16 +288,22 @@ export async function balance(cfg = config(), opts = {}) {
       }
       return null
     }
-    const r = await fetch(url, { headers: { Authorization: `Bearer ${key}`, Accept: 'application/json' }, signal: ctrl.signal })
+    // key 可选：本地网关端点不需要鉴权，公网 API 没 key 时上游会 401 → 返回 null
+    const headers = { Accept: 'application/json' }
+    if (key) headers.Authorization = `Bearer ${key}`
+    const r = await fetch(url, { headers, signal: ctrl.signal })
     if (!r.ok) return null
     const j = await r.json()
-    // a2a 桥（10-30 二版）：不再直接调 a2a API —— 宿主 bot-quota.timer 每 5 分钟聚合
-    // 全部账号（含 429 剔除、倍率换算）写成 a2a-balance.json，这里只读文件。
-    // 她只看得到「还剩多少」，账号明细/限流状态全留在宿主（不该进她的视野）。
-    if (j?.total != null && j?.usableToday != null) {
+    // 反代快照带 at（聚合器写入时刻）：30 分钟没刷新同样按「看不到」处理
+    if (j?.at && Date.now() - Number(j.at) > 30 * 60_000) return null
+    // 网关余额（10-30 建，11-11 改走反代）：宿主聚合器把全部账号的 remaining
+    // 合成一个数（usableNow）。她只看得到「还剩多少」，账号明细/限流状态留在宿主。
+    const avail = j?.usableNow ?? j?.usableToday
+    if (j?.total != null && avail != null) {
       return {
-        currency: 'A2A', total: Number(j.total), usableToday: Number(j.usableToday),
-        granted: Number(j.total), toppedUp: 0,
+        currency: 'A2A', total: Number(j.total), usableNow: Number(avail),
+        granted: Number(j.total), toppedUp: 0, at: j.at, unit: j.unit || 'credit',
+        refreshIn24h: j.refreshIn24h, dailyCap: j.dailyCap,
         wallets: [{ currency: 'A2A', total: Number(j.total), note: '聚合额度' }],
       }
     }
@@ -339,7 +351,8 @@ export async function report(opts = {}) {
   const hardCap = num(cfg.ledger?.dailyBudget, 0)      // 0 = 不设上限
   const budget = hardCap > 0 ? Math.min(hardCap, balanceYuan) : balanceYuan
   const todayCost = costOf(todayRow.mine, cfg)
-  const bal = opts.balance === false ? null : await balance(cfg)
+  // 同一份余额不查两次（HTTP 端点下每次都是一次往返）
+  const bal = opts.balance === false ? null : balanceForBudget
   return {
     today,
     me: {

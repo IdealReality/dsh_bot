@@ -487,14 +487,27 @@ export async function run(argv = []) {
     const allPrivate = everyUrl.length > 0 && everyUrl.every(isPrivate)
     if (allPrivate) {
       // 统一网关：冗余看网关里的账号池，不看这里的 fallback 级数
+      // 余额走和 ledger 同一个入口（nginx 反代 /balance）；反代不通才回落到共享快照。
       let bal = null
-      try { bal = JSON.parse(fs.readFileSync(dshPath('a2a-balance.json'), 'utf8')) } catch { /* 未生成 */ }
+      let balSrc = ''
+      const balUrl = config().ledger?.balanceUrl || ''
+      if (/^https?:/i.test(balUrl)) {
+        try {
+          const r = await fetch(balUrl, { signal: AbortSignal.timeout(3000) })
+          if (r.ok) { bal = await r.json(); balSrc = '反代' }
+        } catch { /* 反代不可达 → 走快照 */ }
+      }
+      if (!bal) {
+        try { bal = JSON.parse(fs.readFileSync(dshPath('a2a-balance.json'), 'utf8')); balSrc = '快照文件' } catch { /* 未生成 */ }
+      }
       const n = Number(bal?.accounts?.total || 0)
       const okN = Number(bal?.accounts?.ok || 0)
       const pool = Number(bal?.total || 0)
-      if (n >= 2 && okN >= 1) items.push(ok('上游冗余', `统一网关 ${everyUrl[0]}：${okN}/${n} 个账号可用，池 ${pool} credit；模型级 fallback ${fb.length} 级在网关内选号`))
+      const fresh = bal?.at ? (Date.now() - Number(bal.at)) < 30 * 60_000 : false
+      if (n >= 2 && okN >= 1 && fresh) items.push(ok('上游冗余', `统一网关 ${everyUrl[0]}：${okN}/${n} 个账号可用，池 ${pool} credit（${balSrc}，${Math.round((Date.now() - Number(bal.at)) / 60000)} 分钟前刷新）；模型级 fallback ${fb.length} 级在网关内选号`))
+      else if (n >= 2 && okN >= 1) items.push(warn('上游冗余', `统一网关 ${everyUrl[0]}：${okN}/${n} 个账号可用，池 ${pool} credit —— 但账本已陈旧（${balSrc}，at=${bal?.at || '无'}），额度聚合器可能停了`))
       else if (n === 1) items.push(warn('上游冗余', '统一网关里只有 1 个账号 —— 账号级没有冗余'))
-      else items.push(warn('上游冗余', '读不到网关账号池（a2a-balance.json 缺失或为空）—— 额度聚合器可能停了'))
+      else items.push(warn('上游冗余', `读不到网关账号池（反代 ${balUrl || '未配置'} + a2a-balance.json 都拿不到）—— 额度聚合器或 nginx 可能停了`))
     } else {
       const origins = new Set(fb.map((x) => urlOf(x) + '|' + String(x.api_key || '').slice(0, 8)))
       if (!fb.length) items.push(warn('通道多样性', 'llm.fallback 未配置 —— 主通道挂即全停'))

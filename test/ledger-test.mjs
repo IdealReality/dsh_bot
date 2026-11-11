@@ -219,6 +219,43 @@ ok('余额接口挂了/字段缺 → null，不抛也不编', async () => {
   assert.equal(await L.balance({ ledger: { balanceUrl: 'http://127.0.0.1:1/x', apiKey: 'k' } }), null)
 })
 
+ok('网关余额端点免 key：usableNow 直接当可用额（余额桥接）', async () => {
+  const http = await import('node:http')
+  const srv = http.createServer((req, res) => {
+    res.writeHead(200, { 'content-type': 'application/json' })
+    res.end(JSON.stringify({
+      at: Date.now(), unit: 'credit', total: 78966, usableNow: 78000,
+      refreshIn24h: 0, dailyCap: 34856, accounts: { ok: 20, rateLimited: 0, total: 20 },
+    }))
+  })
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r))
+  const port = srv.address().port
+  try {
+    // 没有 apiKey：本地反代端点不需要鉴权（公网 API 才要）
+    const v = await L.balance({ ledger: { balanceUrl: `http://127.0.0.1:${port}/balance` } })
+    assert.ok(v)
+    assert.equal(v.total, 78966)
+    assert.equal(v.usableNow, 78000)
+  } finally {
+    srv.close()
+  }
+})
+
+ok('网关快照超过 30 分钟 → null（宁可不报数，不报旧数）', async () => {
+  const http = await import('node:http')
+  const srv = http.createServer((req, res) => {
+    res.writeHead(200, { 'content-type': 'application/json' })
+    res.end(JSON.stringify({ at: Date.now() - 31 * 60_000, total: 1, usableNow: 1 }))
+  })
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r))
+  const port = srv.address().port
+  try {
+    assert.equal(await L.balance({ ledger: { balanceUrl: `http://127.0.0.1:${port}/balance` } }), null)
+  } finally {
+    srv.close()
+  }
+})
+
 // ── ⑤ 缓存：提示语同步读，不能每次都跑 python ───────────────────────────────
 ok('readBrief 没缓存时返回 null', () => {
   assert.equal(L.readBrief(), null)
@@ -270,7 +307,6 @@ ok('python 侧按 assistant/message 的 usage 记账，且区分她与用户', (
 ok('账本模块不写死余额接口，也不把 0 当余额', () => {
   const m = read('tools/lib/work/ledger.mjs')
   assert.match(m, /balanceUrl/)                       // 走配置，不硬编码
-  assert.match(m, /if \(!url \|\| !key\) return null/)
   assert.match(m, /Number\.isFinite\(w\.total\)/)     // 接口不通/字段缺 → 过滤掉，不是 0
   assert.match(m, /balance_infos/)                    // 官方口径：多币种全留
 })

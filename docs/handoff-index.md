@@ -155,7 +155,7 @@ dsh_bot/
 | `socialDigest` | enabled/at/min | true/23:30/3 | B站社交日报（≥min 条才推 QQ） |
 | `rvc` | root/python/ffmpeg | D盘路径 | 唱歌系统 |
 | `llm` | api_key/base_url/model | DeepSeek | 实时推理 |
-| `ledger` | dailyBudget/price.*/mineWorkspace/promptInQQ | 3 元 / 2·0.2·3 / feiyu-work / true | 她的账本：日预算、token 单价（元/百万）、哪块算"她自己吃的"、聊天时是否注入 |
+| `ledger` | dailyBudget/price.*/mineWorkspace/promptInQQ/balanceUrl | 3 元 / 2·0.2·3 / feiyu-work / true / 反代 :8304 | 她的账本：日预算、token 单价（元/百万）、哪块算"她自己吃的"、聊天时是否注入、余额端点 |
 
 **额度哲学**：所有 dailyMax **0 = 不限**；账本按天自动清零；账本文件 quota.json / bili-actions.json / douyin-{share,comment,produce}.json / imggen.json。
 
@@ -163,7 +163,7 @@ dsh_bot/
 - **用量**：DSH 会话日志 `~/.dsh/sessions/<工作区>/<会话>/session.v4.jsonl.zstd` 里 `type=assistant/message` 的 `data.usage`（`inputTokens/outputTokens/cacheReadTokens/totalTokens`，且 `total = input + output + cache`）。她的是 `~/.dsh/feiyu-work` 那个工作区，和用户分开算。
 - **饭钱**：token × `ledger.price`（默认 2 / 0.2 / 3 元每百万，标 ≈，按实际账单改）。
 - **额度**：今天还剩几条分享/回评/表情包/抖音动作。
-- 查不到就**明说查不到**（余额要 `ledger.balanceUrl`+`apiKey` 才查，官方 `/user/balance` 对现在这把 key 返回 401 —— 宁可不报，不许编一个 ¥0）。
+- 查不到就**明说查不到**（余额走 `ledger.balanceUrl`，生产值 `http://172.17.0.1:8304/balance` —— 宿主 nginx 反代直接吐额度聚合器快照，每 5 分钟刷新，免 key；官方 `/user/balance` 对这把 key 返回 401。快照超过 30 分钟即视为看不到 —— 宁可不报，不许编一个 ¥0）。
 - 提示语两条通路都注入：【账本】块进她的唤醒（`lib/scheduler.js` 的 `ledgerLines`）+ 进 QQ/微信/抖音私信聊天（`persona.mjs` 的 `ledgerBlock`，**群聊不注入**）。缓存 `~/.feiyu-ai/cache/ledger-brief.json`，tick 每 10 分钟刷新（python 扫一次 1.3 秒，不能塞进提示语同步路径）。
 
 **视频生产（`feiyu produce`，10-26 第 17 轮）**：用户原话"要做真的视频而不是单张图片加旁白"。旧版是"一张图 + Ken Burns + 旁白"再把 mp4 串起来；现在是**剪出来的片子**（`tools/lib/video.mjs`）：
