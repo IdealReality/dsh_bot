@@ -473,14 +473,34 @@ export async function run(argv = []) {
     } catch { items.push(warn('改名·宿主', 'rename-audit.json 不存在 —— 宿主侧体检还没跑过（/usr/local/bin/dsh-bot-rename-audit.sh）')) }
   } catch (e) { items.push(warn('改名体检', '检查失败：' + e.message)) }
 
-  // ── P1-3 通道多样性（2026-11-03）：第二家 key 就位才算真 fallback ─────────
+  // ── 通道多样性 / 上游冗余（2026-11-03，2026-11-11 修正判据）─────────────
+  // 统一网关架构下「fallback 全部同源」是**设计**不是缺陷：模型级 fallback 换的是
+  // 模型（flash ↔ pro ↔ auto），供应商冗余在网关内部的账号池里（实测 20 个号）。
+  // 旧判据把两者混为一谈，于是每次体检都报一条「网关单点」—— 与 B站 审核那条同类，
+  // 属于告警疲劳。现在按地址分流：私有网段 = 统一网关 → 看账号池；公网 → 才看来源多样性。
   try {
     const c = config().llm || {}
     const fb = [].concat(c.fallback ?? c.fallbacks ?? []).filter((x) => x && typeof x === 'object')
-    const origins = new Set(fb.map((x) => String(x.base_url || x.baseUrl || c.base_url || '') + '|' + String(x.api_key || '').slice(0, 8)))
-    if (!fb.length) items.push(warn('通道多样性', 'llm.fallback 未配置 —— 主通道挂即全停'))
-    else if (origins.size <= 1) items.push(warn('通道多样性', 'fallback ' + fb.length + ' 级全部同源 —— 网关单点；第二家 key 在 llm.fallback 加 {base_url, api_key, model} 即生效，管道已就位'))
-    else items.push(ok('通道多样性', 'fallback ' + fb.length + ' 级跨 ' + origins.size + ' 个来源'))
+    const urlOf = (x) => String(x?.base_url || x?.baseUrl || c.base_url || '')
+    const isPrivate = (u) => /^https?:\/\/(127\.|localhost[:/]|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|\[::1\])/.test(u)
+    const everyUrl = [urlOf(c), ...fb.map(urlOf)].filter(Boolean)
+    const allPrivate = everyUrl.length > 0 && everyUrl.every(isPrivate)
+    if (allPrivate) {
+      // 统一网关：冗余看网关里的账号池，不看这里的 fallback 级数
+      let bal = null
+      try { bal = JSON.parse(fs.readFileSync(dshPath('a2a-balance.json'), 'utf8')) } catch { /* 未生成 */ }
+      const n = Number(bal?.accounts?.total || 0)
+      const okN = Number(bal?.accounts?.ok || 0)
+      const pool = Number(bal?.total || 0)
+      if (n >= 2 && okN >= 1) items.push(ok('上游冗余', `统一网关 ${everyUrl[0]}：${okN}/${n} 个账号可用，池 ${pool} credit；模型级 fallback ${fb.length} 级在网关内选号`))
+      else if (n === 1) items.push(warn('上游冗余', '统一网关里只有 1 个账号 —— 账号级没有冗余'))
+      else items.push(warn('上游冗余', '读不到网关账号池（a2a-balance.json 缺失或为空）—— 额度聚合器可能停了'))
+    } else {
+      const origins = new Set(fb.map((x) => urlOf(x) + '|' + String(x.api_key || '').slice(0, 8)))
+      if (!fb.length) items.push(warn('通道多样性', 'llm.fallback 未配置 —— 主通道挂即全停'))
+      else if (origins.size <= 1) items.push(warn('通道多样性', 'fallback ' + fb.length + ' 级全部同源 —— 公网单店；第二家 key 在 llm.fallback 加 {base_url, api_key, model} 即生效'))
+      else items.push(ok('通道多样性', 'fallback ' + fb.length + ' 级跨 ' + origins.size + ' 个来源'))
+    }
   } catch (e) { items.push(warn('通道多样性', '检查失败：' + e.message)) }
 
   // 5.10) 外部监听面（2026-11-03）：容器里谁在对「所有人」说话
