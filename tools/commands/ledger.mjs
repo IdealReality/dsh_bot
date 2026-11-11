@@ -59,7 +59,7 @@ function render(r) {
     const multi = (r.balance.wallets || []).filter((w) => w.currency !== r.balance.currency)
     for (const w of multi) line('  · 还有', `${w.total} ${w.currency}`)
   } else {
-    line('钱包余额', '看不到（没配 ledger.balanceUrl/apiKey —— 这项得问用户）')
+    line('钱包余额', '看不到（余额端点没配，或反代/聚合器没在跑 —— 这项得问用户）')
   }
   console.log('\n  今天还能干的活：')
   for (const q of r.quotas) {
